@@ -5,25 +5,29 @@ namespace AutoClicker
     internal static class Pointer
     {
         public static bool UseHid;
+        static int hidFails;
 
         public static bool MoveTo(int x, int y)
         {
-            if (UseHid && HidMouse.IsConnected && HidMouse.MoveTo(x, y)) return true;
-            if (UseHid) UseHid = false;   // the port went away; finish the run on SendInput
-            Native.SetCursorPos(x, y);
+            if (UseHid && HidMouse.IsConnected)
+            {
+                if (HidMouse.MoveTo(x, y)) { hidFails = 0; return true; }
+                if (++hidFails >= 6) UseHid = false;   // the port really is gone
+            }
+            Native.SetCursorPos(x, y);                 // still land on target
             return true;
         }
 
         public static void Click(MouseButton b, bool doubleClick)
         {
-            if (UseHid && HidMouse.IsConnected) HidMouse.Click(b, doubleClick);
-            else Native.Click(b, doubleClick);
+            if (UseHid && HidMouse.IsConnected && HidMouse.Click(b, doubleClick)) return;
+            Native.Click(b, doubleClick);
         }
 
         public static void Button(MouseButton b, bool press)
         {
-            if (UseHid && HidMouse.IsConnected) HidMouse.Button(b, press);
-            else Native.Button(b, press);
+            if (UseHid && HidMouse.IsConnected && HidMouse.Button(b, press)) return;
+            Native.Button(b, press);
         }
 
         /// <summary>Teleport, for parking and restoring the pointer only.</summary>

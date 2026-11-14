@@ -31,7 +31,7 @@ namespace AutoClicker
         bool toggleHotkeyActive;
         bool runCounts;
 
-        GroupBox grpSteps, grpWindow, grpCounter, grpTiming, grpHuman, grpRepeat, grpHotkeys;
+        GroupBox grpSteps, grpWindow, grpCounter, grpTiming, grpHuman, grpRepeat, grpHotkeys, grpHid;
         ComboBox cbWindow, cbArea;
         CheckBox chkBackground, chkCount;
         CheckBox chkHid;
@@ -206,7 +206,7 @@ namespace AutoClicker
             AddHint(grpHotkeys, "Click a box, then press keys. Delete clears it.", 14, 86);
 
             // Mouse output
-            var grpHid = AddGroup(this, "Mouse output", 12, 728, 656, 56);
+            grpHid = AddGroup(this, "Mouse output", 12, 728, 656, 56);
             chkHid = AddCheck(grpHid, "Use Pico HID mouse (looks like a real mouse)", 14, 22);
             cbHidPort = new ComboBox { Location = new Point(330, 20), Width = 196, DropDownStyle = ComboBoxStyle.DropDownList };
             grpHid.Controls.Add(cbHidPort);
@@ -925,6 +925,7 @@ namespace AutoClicker
                     return;
                 }
             }
+
             Pointer.UseHid = hid;
 
             if (fromButton && !toggleHotkeyActive && points.Count > 0 && !background && !hid)
@@ -977,7 +978,7 @@ namespace AutoClicker
 
         void SetRunningUi(bool running)
         {
-            grpSteps.Enabled = grpWindow.Enabled = grpTiming.Enabled = grpHuman.Enabled = grpRepeat.Enabled = grpHotkeys.Enabled = !running;
+            grpSteps.Enabled = grpWindow.Enabled = grpTiming.Enabled = grpHuman.Enabled = grpRepeat.Enabled = grpHotkeys.Enabled = grpHid.Enabled = !running;
             chkCount.Enabled = btnCatching.Enabled = cbArea.Enabled = !running;
             if (running)
             {
