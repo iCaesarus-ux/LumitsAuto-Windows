@@ -249,10 +249,33 @@ Double-click a step to:
 - If an online game's rules forbid automation, human-like input lowers the chance of being flagged
   but doesn't remove it.
 
+## Click Recorder
+
+A separate little app, `recorder\ClickRecorder.exe` (build it with `recorder\build.cmd`), that records mouse
+clicks during a run: where each landed, which button, and the time between clicks. It sees every press on the
+PC, yours and other programs' alike, so it records Auto Clicker's clicks and your own.
+
+- **F9** (or the button) starts and stops a recording from any window. Name it first, e.g. "Auto Clicker" or
+  "Me". Clicks on Click Recorder's own windows are left out.
+- Recordings stay in memory until you close the app. **Save CSV…** writes the ticked ones to a file (one line per
+  click: time, gap since the one before, position, button).
+- **Show graphs** (it also opens when a recording stops), for the ticked recordings:
+  - **Time between clicks:** a histogram per recording, all on the same millisecond scale so they can be compared,
+    with the number of gaps, mean, standard deviation, median, shortest and longest beside each. Hover a column
+    for its range and count. **Column width** and **Show up to** set the scale (0 picks them); a few long pauses
+    (between screens, say) are left off the scale and counted as such.
+  - **Where you clicked:** a dot per click over a faded picture of the screen as the recording started, up to
+    three recordings at once. Hover a dot for which click it was.
+  - **Table:** every click.
+  - **Left button only** (on by default) leaves other buttons out of all three. **Save picture…** saves a graph.
+- Auto Clicker's **background mode** sends its clicks straight to the game window as messages, so they don't pass
+  through Windows' mouse input and can't be recorded. Its normal clicks can.
+
 ## Building
 
 Close the app, then run `build.cmd`. It uses the C# compiler that ships with Windows
-(.NET Framework 4), so no SDK or Visual Studio is needed. Source is in `src/`.
+(.NET Framework 4), so no SDK or Visual Studio is needed. Source is in `src/`. Click Recorder builds the same
+way with `recorder\build.cmd`, from `recorder\src`.
 
 ## Tests
 
