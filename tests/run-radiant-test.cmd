@@ -1,7 +1,8 @@
 @echo off
 rem Tests catching radiants in the real ClickEngine, in a pretend game window off-screen. The real pointer doesn't move.
 rem   run-radiant-test.cmd radiant.jpg normal-fight.png caught.png fainted.png
-rem The pictures are 1920 x 1025 screens of the game. Nothing is written to your own settings, counts or catch log.
+rem The pictures are 1920 x 1025 screens of the game. The PC 2v2 pictures (duo-*.png) must sit beside radiant.jpg,
+rem as in tests\pictures\pc. Nothing is written to your own settings, counts or catch log.
 setlocal
 cd /d "%~dp0.."
 

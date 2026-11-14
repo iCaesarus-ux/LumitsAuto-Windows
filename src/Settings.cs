@@ -54,6 +54,11 @@ namespace AutoClicker
         public bool CatchPractice = true;
         /// <summary>Catch a radiant by itself, rather than stopping the run before attacking it.</summary>
         public bool CatchRadiants = true;
+        /// <summary>
+        /// Radiants only: no fighting. The radiant check's step is the Run button, clicked for every Lumit that isn't a
+        /// radiant (ticked ones and 2v2s too); a radiant is caught, or stops the run, as set above.
+        /// </summary>
+        public bool RadiantsOnly;
         /// <summary>In a 2v2, the move your second Lumit weakens a Lumit you catch with, 0–5 from the top left (top right: Gnashing Blades).</summary>
         public int PartnerWeaken = 2;
         /// <summary>In a 2v2, the move your second Lumit finishes off a Lumit you don't catch with (bottom right: Rift Rend).</summary>
@@ -144,6 +149,7 @@ namespace AutoClicker
             lines.Add("catch=" + Flag(CatchOn));
             lines.Add("catchPractice=" + Flag(CatchPractice));
             lines.Add("catchRadiants=" + Flag(CatchRadiants));
+            lines.Add("radiantsOnly=" + Flag(RadiantsOnly));
             lines.Add("partnerWeaken=" + Num(PartnerWeaken));
             lines.Add("partnerKill=" + Num(PartnerKill));
             lines.Add("healBelow=" + Num(HealBelowHp));
@@ -196,6 +202,7 @@ namespace AutoClicker
                     case "catch": CatchOn = val == "1"; break;
                     case "catchpractice": CatchPractice = val == "1"; break;
                     case "catchradiants": CatchRadiants = val == "1"; break;
+                    case "radiantsonly": RadiantsOnly = val == "1"; break;
                     case "partnerweaken": PartnerWeaken = Math.Max(0, Math.Min(5, Int(val, PartnerWeaken))); break;
                     case "partnerkill": PartnerKill = Math.Max(0, Math.Min(5, Int(val, PartnerKill))); break;
                     case "healbelow": HealBelowHp = Math.Max(0, Int(val, HealBelowHp)); break;

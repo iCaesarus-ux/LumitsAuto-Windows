@@ -35,7 +35,8 @@ attacks first.
 **Getting back on track:** while waiting for a step, the app keeps checking which screen the game
 is really on:
 - if another step's screen stays up for 5 seconds (say a Continue click didn't register and
-  Victory is still showing), it carries on from that step;
+  Victory is still showing), it carries on from that step. When that's the first step (the map)
+  after the fight's step, the fight is over, and the next one counts as a new fight;
 - if the previous step's screen comes back (the enemy survived), it clicks it again right away;
 - if nothing it knows shows up, it keeps looking for three of the step's time-outs (about 90 s by
   default) and only then stops, sending the reason and a screenshot to your phone.
@@ -146,10 +147,41 @@ run instead. It works whether or not that lumit is ticked, and even with catchin
    a screenshot when a radiant is spotted and when it's caught.
 4. If Infibex faints, the stand-in only uses **Capture**, since its Strike hasn't been measured.
 5. If the fight ends without a catch, the run stops and your phone is told.
+6. **In a 2v2** both wild Lumits' names are checked. A radiant there stops the run before anything is
+   clicked, and your phone is told which one it is (the left one on the field has the upper card). The app
+   doesn't fight 2v2 radiants itself yet: its clicks on a 2v2's targets haven't been seen working on the PC,
+   and a click on the wrong Lumit, or your second Lumit's move, could kill it.
+
+**2v2s on the PC** look different from the phone: two cards a side, one above the other, instead of four
+in a row. Your lead's card is the lower one on the left. The wild Lumits' are on the right: the upper card
+is the left one on the field. The app's 2v2 spots were measured in the PC game on 14 November 2026 (before
+that they were the phone's, and on the PC a 2v2 wasn't seen at all, so neither wild name was checked). A
+2v2 needs both your bars and a wild one, each red from its left end, so a 1v1's red card frame or a red
+radiant's portrait can't pass for one.
 
 `tests/run-radiant-test.cmd` tests this in a pretend game window placed off-screen, without moving the
 real pointer. In 720,000 simulated fights of that decision, with Strike doing 6 to 60 damage, varying by
 up to 13% per hit, and 15% crits, one radiant died. It hasn't caught a real radiant yet.
+
+**Radiants only (hunting radiants):** no fighting. Every Lumit that isn't a radiant is run from, and a
+radiant is caught.
+1. In a fight, on your turn, use **Pick on screen…** to drag a box over the **Run** button (the boot,
+   bottom left). Put it in place of the attack step, so the steps are stone → Run → Continue.
+2. In **Alerts…**, tick the radiant check and set **Check before clicking step** to the Run step.
+3. In **Catching…**, tick **Radiants only**, and choose the game under **Game window**. Start won't go
+   without the radiant check and a game window.
+
+Then in each fight:
+- **Not a radiant:** it clicks Run. Lumits ticked for catching are run from too, and so are 2v2s. It
+  first waits for the fight's menu to light up, so the name cards have surely faded in.
+- **A radiant in a 1v1:** caught with Strike and Capture, as above, and kept. Then the Continue step ends
+  the fight, so keep it in the list. With *Catch radiants by itself* off, the run stops before anything
+  is clicked. Either way your phone is told.
+- **A radiant in a 2v2** (either wild Lumit): the run stops before anything is clicked, and your phone is
+  told which one it is, for you to catch it.
+- After a run, the map coming back means the fight is over, so it goes straight on to the stone without
+  waiting for Continue. If your turn comes back instead, it clicks Run again.
+- Counting and healing with Bark Tea work as usual.
 
 **Healing:**
 - In **Catching…**, use the slider to choose the HP below which your lumit gets healed (0 = never).
@@ -284,5 +316,10 @@ doesn't move. The pictures they use are in `tests/pictures`.
 
 - **Radiant catching**, from the repository's folder:
   `tests\run-radiant-test.cmd tests\pictures\pc\radiant.jpg tests\pictures\pc\game-turn-lowmp.png tests\pictures\pc\game-caught-sdoodo.png tests\pictures\pc\game-fainted-choice.png`
+  It also covers radiants only (runs, a failed run, a radiant after runs) and the PC's 2v2s, from the
+  `duo-*.png` pictures beside `radiant.jpg`: the spots on them, and a pretend PC 2v2 with and without a radiant.
 - **2v2 fights:** `tests\DuoTest.cs` takes the folder `tests\pictures\forest`. Build it the way
   `run-radiant-test.cmd` does, with `/main:AutoClicker.DuoTest` and `tests\DuoTest.cs` in place of the radiant test.
+  Those pictures are the phone's, so it uses the phone's 2v2 spots (four cards in a row). Two of its checks
+  failed before radiants only was added and still do: catches put down to the right Lumit by their caught name
+  (7 of 16), and "no stray clicks and no stops" (fails about two runs in three).

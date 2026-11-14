@@ -107,6 +107,18 @@ namespace AutoClicker
             return int.TryParse(digits, out n) ? n : -1;
         }
 
+        /// <summary>
+        /// A bar's fill as <see cref="BarFill"/> reads it, but only when it's filled from its left end, as a bar is; 0
+        /// otherwise. Where a 2v2's bars are, a 1v1 can have a red portrait or card frame filling only part of the way along.
+        /// </summary>
+        public static double BarFromLeft(Bitmap source, Rectangle bar, Func<int, int, int, bool> isFill)
+        {
+            double fill = BarFill(source, bar, isFill);
+            if (fill <= 0) return fill;
+            var start = new Rectangle(bar.X, bar.Y, Math.Max(4, bar.Width / 15), bar.Height);
+            return BarFill(source, start, isFill) > 0 ? fill : 0;
+        }
+
         /// <summary>How full a coloured bar is (0–1), judged by its rightmost filled pixel in most rows; -1 if the area is outside the picture.</summary>
         public static double BarFill(Bitmap source, Rectangle bar, Func<int, int, int, bool> isFill)
         {

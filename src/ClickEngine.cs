@@ -18,6 +18,8 @@ namespace AutoClicker
             public readonly string Problem;
             public bool Radiant;
             public string RadiantName = "";
+            /// <summary>Where the radiant is, when it isn't a 1v1's only wild Lumit ("in a 2v2, the left one"); "" otherwise.</summary>
+            public string RadiantPlace = "";
             public byte[] Screenshot;
             /// <summary>Worth telling your phone about (not when you yourself caused the stop).</summary>
             public bool Notify = true;
@@ -80,6 +82,10 @@ namespace AutoClicker
         string duoLead, duoPartner; // your two Lumits' names, from "Choose an action for …"
         bool standInPending;   // a Lumit fainted in a 2v2, so the next new name choosing is a stand-in's
         readonly List<Foe> caughtOrder = new List<Foe>(); // caught in earlier rounds, in the order their caught screens come
+        int ranCycle;          // radiants only: the cycle whose fight was run from
+
+        /// <summary>No fighting: every Lumit but a radiant gets the radiant check's step, which is the Run button.</summary>
+        bool RadiantsOnly { get { return o.Catch != null && o.Catch.RadiantsOnly; } }
 
         /// <summary>Raised on the worker thread a few times a second: (clicks so far, current cycle, what it's doing).</summary>
         public event Action<long, int, string> Progress;
@@ -146,6 +152,7 @@ namespace AutoClicker
             duoLead = duoPartner = null;
             standInPending = false;
             caughtOrder.Clear();
+            ranCycle = 0;
             window = o.Space == null ? null : o.Space.Window;
             if (window != null)
             {
@@ -166,6 +173,7 @@ namespace AutoClicker
                 result.Problem = stop.Problem;
                 result.RadiantFound = stop.Radiant;
                 result.RadiantName = stop.RadiantName;
+                result.RadiantPlace = stop.RadiantPlace;
                 result.AlertTitle = stop.AlertTitle;
                 result.NotifyPhone = stop.Problem != null && stop.Notify;
                 result.Screenshot = stop.Screenshot ?? (result.NotifyPhone ? Evidence() : null);
@@ -223,6 +231,16 @@ namespace AutoClicker
                             completed--;
                             cycle = completed + 1;
                         }
+                        else if (showing == 0 && o.NameStep > 0 && i > o.NameStep)
+                        {
+                            // Back on the first step's screen after the fight's step: the fight is over without the
+                            // steps left (as after running from it, with no Victory to Continue). That ends the pass,
+                            // so the next fight is a new one: counted, checked for a radiant, and a 1v1 or 2v2 afresh.
+                            CheckRadiantLost(0);
+                            if (EndPass(ref completed, ref nextBreak)) return;
+                            i = 0;
+                            continue;
+                        }
                         i = showing;
                         p = o.Points[i];
                         CheckRadiantLost(i);
@@ -244,15 +262,22 @@ namespace AutoClicker
                 // Finished a pass through the list.
                 CheckRadiantLost(-1);
                 i = 0;
-                completed++;
-                if (o.Cycles > 0 && completed >= o.Cycles) return;
-                if (clock.ElapsedMilliseconds >= nextBreak)
-                {
-                    TakeBreak();
-                    nextBreak = NextBreakTime();
-                }
-                cycle = completed + 1;
+                if (EndPass(ref completed, ref nextBreak)) return;
             }
+        }
+
+        /// <summary>A pass through the list is done: a break if one is due, and the next pass. True when it was the last one asked for.</summary>
+        bool EndPass(ref int completed, ref long nextBreak)
+        {
+            completed++;
+            if (o.Cycles > 0 && completed >= o.Cycles) return true;
+            if (clock.ElapsedMilliseconds >= nextBreak)
+            {
+                TakeBreak();
+                nextBreak = NextBreakTime();
+            }
+            cycle = completed + 1;
+            return false;
         }
 
         /// <summary>The first step whose screen is showing right now, so a run picks up where the game is; 0 if none is.</summary>
@@ -276,6 +301,9 @@ namespace AutoClicker
         void CheckEnemy(int i, bool aboutToClick)
         {
             if (i != o.NameStep || radiantCycle == cycle || duoCycle == cycle) return;
+            // Radiants only: running can't be undone, so the fight's menu has to be up before the names are judged. By
+            // then the name cards have surely faded in, and a 2v2's bars show.
+            if (RadiantsOnly && window != null && countedCycle != cycle) WaitUntil(() => YourTurnMenuLit(CurrentFrame()), 5000);
             if (o.Catch != null && window != null && countedCycle != cycle && IsDuo(CurrentFrame()))
             {
                 StartDuo();
@@ -418,7 +446,9 @@ namespace AutoClicker
             }
             LumitCounter.Entry entry = o.Counter != null ? o.Counter.Lookup(fightLumit) : null;
             string who = entry == null ? "it" : entry.Name;
-            if (leadFainted)
+            // Radiants only: ticked Lumits are run from too.
+            if (RadiantsOnly) catchThis = false;
+            if (leadFainted && (radiantCycle == cycle || !RadiantsOnly))
             {
                 // A stand-in is fighting: its moves aren't yours and could kill, so only Capture until the fight ends.
                 captureTried = true;
@@ -533,13 +563,15 @@ namespace AutoClicker
         /// <summary>A Lumit at this much HP or more hasn't been hit yet, so the first move is always a weakening one.</summary>
         const double Unhurt = 0.95;
 
-        /// <summary>A 2v2 fight: HP bars on the small cards along the top, one of yours and one wild one at least.</summary>
+        /// <summary>A 2v2 fight: both your Lumits' HP bars on their small cards, and a wild one's at least.</summary>
         bool IsDuo(Bitmap shot)
         {
-            if (shot == null) return false;
-            double ours = Math.Max(ScreenText.BarFill(shot, Spot(CatchSpots.Lead2Bar), ScreenText.IsRed), ScreenText.BarFill(shot, Spot(CatchSpots.Partner2Bar), ScreenText.IsRed));
-            double theirs = Math.Max(ScreenText.BarFill(shot, Spot(CatchSpots.Enemy1Bar), ScreenText.IsRed), ScreenText.BarFill(shot, Spot(CatchSpots.Enemy2Bar), ScreenText.IsRed));
-            return ours > 0.01 && theirs > 0.01;
+            return CatchSpots.DuoShowing(shot, o.Catch.Spots);
+        }
+
+        double DuoBar(Bitmap shot, string key)
+        {
+            return CatchSpots.DuoBar(shot, o.Catch.Spots, key);
         }
 
         /// <summary>A 2v2 has begun: both wild Lumits are counted and checked for radiants.</summary>
@@ -553,7 +585,7 @@ namespace AutoClicker
             for (int i = 0; i < 2; i++)
             {
                 var f = foes[i] = new Foe { Slot = i };
-                f.Hp = ScreenText.BarFill(shot, Spot(i == 0 ? CatchSpots.Enemy1Bar : CatchSpots.Enemy2Bar), ScreenText.IsRed);
+                f.Hp = DuoBar(shot, i == 0 ? CatchSpots.Enemy1Bar : CatchSpots.Enemy2Bar);
                 if (f.Hp <= 0.01)
                 {
                     f.Gone = true;
@@ -570,13 +602,22 @@ namespace AutoClicker
                 f.Radiant = o.RadiantCheck && gold >= o.AlertGoldPercent;
                 f.Entry = o.Counter != null ? o.Counter.Record(name, f.Radiant) : name;
                 LumitCounter.Entry rules = o.Counter != null ? o.Counter.Lookup(f.Entry) : null;
-                f.Catch = o.Catch.CatchOn && rules != null && rules.Catch;
+                f.Catch = o.Catch.CatchOn && !o.Catch.RadiantsOnly && rules != null && rules.Catch;
             }
             foreach (Foe f in foes)
             {
                 if (!f.Radiant) continue;
                 if (!o.Catch.CatchRadiants)
-                    throw new StopRun("a radiant appeared (gold name) in a 2v2, nothing was clicked") { Radiant = true, RadiantName = f.Entry, Screenshot = Evidence() };
+                    throw new StopRun("a radiant appeared (gold name) in a 2v2, nothing was clicked") { Radiant = true, RadiantName = f.Entry, RadiantPlace = Place(f), Screenshot = Evidence() };
+                // 2v2 target clicks haven't been seen working on the PC, so the radiant is left for you, untouched.
+                if (!o.Catch.CatchDuoRadiants)
+                    throw new StopRun("a radiant appeared (gold name) " + Place(f) + ", nothing was clicked: catch it yourself")
+                    {
+                        Radiant = true,
+                        RadiantName = f.Entry,
+                        RadiantPlace = Place(f),
+                        Screenshot = Evidence()
+                    };
                 radiantCycle = cycle;
                 radiantName = f.Entry;
                 radiantCaught = false;
@@ -584,6 +625,12 @@ namespace AutoClicker
                 RaiseNotice(RadiantLabel() + " spotted!", (after > 0 ? "Found after " + after + (after == 1 ? " lumit. " : " lumits. ") : "") +
                             "Catching it in a 2v2 at " + DateTime.Now.ToString("HH:mm") + ", using only Strike and Capture.");
             }
+        }
+
+        /// <summary>Which wild Lumit of the 2v2 it is, as seen on the field (on the PC, the left one's card is the upper one).</summary>
+        static string Place(Foe f)
+        {
+            return f.Slot == 0 ? "in a 2v2, the left one (upper card)" : "in a 2v2, the right one (lower card)";
         }
 
         /// <summary>
@@ -606,12 +653,12 @@ namespace AutoClicker
                 Bitmap shot = CurrentFrame();
                 double[] hp =
                 {
-                    ScreenText.BarFill(shot, Spot(CatchSpots.Enemy1Bar), ScreenText.IsRed),
-                    ScreenText.BarFill(shot, Spot(CatchSpots.Enemy2Bar), ScreenText.IsRed)
+                    DuoBar(shot, CatchSpots.Enemy1Bar),
+                    DuoBar(shot, CatchSpots.Enemy2Bar)
                 };
                 if (role == Lead)
                 {
-                    double ours = ScreenText.BarFill(shot, Spot(CatchSpots.Lead2Bar), ScreenText.IsRed);
+                    double ours = DuoBar(shot, CatchSpots.Lead2Bar);
                     if (ours >= 0) leadHp = (int)Math.Round(ours * o.Catch.LeadMaxHp);
                 }
                 // The lead always chooses first in a round.
@@ -1284,6 +1331,9 @@ namespace AutoClicker
                 }
                 CheckFainted(i);
                 if (Matches(p)) return i;
+                // Radiants only: after a run, the first step's screen (the map) means the fight is over, and the steps for
+                // after a fought one, like Continue, won't come. So it goes straight on, rather than after 5 s.
+                if (ranCycle == cycle && o.NameStep > 0 && i > o.NameStep && o.Points[0].Waits && Matches(o.Points[0])) return 0;
                 long now = clock.ElapsedMilliseconds;
                 // In a 2v2 parts of the fight screen stay up while the round plays out, so the menu going is what counts as
                 // your turn's screen having gone.
@@ -1465,12 +1515,20 @@ namespace AutoClicker
         void ClickStep(ClickPoint p, int index)
         {
             CheckEnemy(index, true); // again right before clicking: the name card is certainly up by now
-            if (p != null && index == o.NameStep && o.Catch != null && duoCycle == cycle)
+            bool fightStep = p != null && index == o.NameStep && o.Catch != null;
+            // Radiants only: a 2v2 without a radiant gets the step itself, the Run button, rather than a round.
+            bool runFromDuo = fightStep && duoCycle == cycle && RadiantsOnly && radiantCycle != cycle;
+            if (fightStep && duoCycle == cycle && !runFromDuo)
             {
                 DuoRound();
                 return;
             }
-            if (p != null && index == o.NameStep && o.Catch != null) p = ChooseAction(p);
+            if (fightStep && !runFromDuo) p = ChooseAction(p);
+            if (fightStep && RadiantsOnly && ReferenceEquals(p, o.Points[index]))
+            {
+                ranCycle = cycle;
+                SetActivity("no radiant" + (runFromDuo ? " in this 2v2" : "") + ", so step " + (index + 1) + " (Run)");
+            }
             if (p == null)
             {
                 PressButton(MouseButton.Left, false, false);

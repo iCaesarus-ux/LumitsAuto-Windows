@@ -149,7 +149,8 @@ namespace AutoClicker
             tips.SetToolTip(btnCatching, "Turn catching on, practice mode, healing with Bark Tea, and where things are on screen.");
             tips.SetToolTip(cbArea, "The area you're farming. Each has its own Lumits, with their catch ticks, keep rules and attacks,\nso a Lumit found in two areas has its own settings in each.");
             tips.SetToolTip(lblCatch, "Practice: always presses Keep and only notes what it would have released.\n" +
-                                      "Perfect: Lumits with no keep rules left. Each rule is ticked off when a catch meets it.");
+                                      "Perfect: Lumits with no keep rules left. Each rule is ticked off when a catch meets it.\n" +
+                                      "Radiants only: no fighting. Every Lumit but a radiant gets the radiant check's step, the Run button.");
 
             // Timing
             grpTiming = AddGroup(this, "Timing", 12, 484, 322, 112);
@@ -573,7 +574,8 @@ namespace AutoClicker
 
         void OnRadiantFound(RunResult result)
         {
-            string what = result.RadiantName.Length > 0 ? "Radiant " + result.RadiantName : "Radiant";
+            string what = (result.RadiantName.Length > 0 ? "Radiant " + result.RadiantName : "Radiant") +
+                          (result.RadiantPlace.Length > 0 ? " " + result.RadiantPlace : "");
             string after = runCounts && counter.LastRadiantAfter > 0 ? " after " + Plural(counter.LastRadiantAfter, "lumit") : "";
             string time = DateTime.Now.ToString("HH:mm");
             SetStatus(what.ToUpperInvariant() + " spotted" + after + "! Stopped without attacking. (" + time + ")", RadiantColor);
@@ -606,11 +608,12 @@ namespace AutoClicker
 
             List<LumitCounter.Entry> entries = counter.Entries();
             int ticked = entries.Count(e => e.Catch);
-            string catching = !settings.CatchOn ? "Catching off"
+            string catching = settings.RadiantsOnly ? "Radiants only, runs from the rest"
+                : !settings.CatchOn ? "Catching off"
                 : "Catching " + ticked + " kind" + (ticked == 1 ? "" : "s") + (settings.CatchPractice ? " (practice)" : "");
             string healing = settings.HealBelowHp > 0 ? "heals below " + settings.HealBelowHp + " HP" : "no healing";
             lblCatch.Text = catching + "   •   " + healing + "   •   " + entries.Count(e => e.IsPerfect) + " perfect";
-            lblCatch.ForeColor = settings.CatchAndHealOff ? SystemColors.GrayText : RadiantColor;
+            lblCatch.ForeColor = settings.CatchAndHealOff && !settings.RadiantsOnly ? SystemColors.GrayText : RadiantColor;
         }
 
         const string NewArea = "New area…", RenameArea = "Rename…";
@@ -875,6 +878,20 @@ namespace AutoClicker
                 SetStatus("The radiant check points at a step or area that doesn't exist. Check Alerts…", WarningColor);
                 return;
             }
+            if (settings.RadiantsOnly && points.Count > 0)
+            {
+                // Running from everything else would be pointless, or lose a radiant, without these.
+                if (!alert)
+                {
+                    SetStatus("Radiants only needs the radiant check, before the Run step. Turn it on in Alerts…", WarningColor);
+                    return;
+                }
+                if (space.Window == null)
+                {
+                    SetStatus("Radiants only needs the game window chosen under Game window.", WarningColor);
+                    return;
+                }
+            }
             CatchOptions catching = null;
             if (!settings.CatchAndHealOff && points.Count > 0)
             {
@@ -890,14 +907,16 @@ namespace AutoClicker
                     return;
                 }
             }
-            // A radiant is caught even with the rest off. Without a game window it stops the run instead.
-            if ((!settings.CatchAndHealOff || (alert && settings.CatchRadiants)) && points.Count > 0 && space.Window != null && NameCardSet)
+            // A radiant is caught even with the rest off. Without a game window it stops the run instead. Radiants only
+            // always needs this, so 2v2s are seen as such, and a radiant in one is caught or stops the run.
+            if ((settings.RadiantsOnly || !settings.CatchAndHealOff || (alert && settings.CatchRadiants)) && points.Count > 0 && space.Window != null && NameCardSet)
             {
                 catching = new CatchOptions
                 {
-                    CatchOn = settings.CatchOn,
+                    CatchOn = settings.CatchOn && !settings.RadiantsOnly,
                     Practice = settings.CatchPractice,
                     CatchRadiants = settings.CatchRadiants,
+                    RadiantsOnly = settings.RadiantsOnly,
                     PartnerWeaken = settings.PartnerWeaken,
                     PartnerKill = settings.PartnerKill,
                     HealBelowHp = settings.HealBelowHp,

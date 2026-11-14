@@ -106,13 +106,17 @@ namespace AutoClicker
             new Spot(DropSpot, "Infibex's picture (dropped on)", Panel, SpotKind.Click, Anchor.Left, 150, 230, 200, 160),
             new Spot(PanelBar, "HP bar in the panel", Panel, SpotKind.Bar, Anchor.Left, 38, 489, 403, 6),
             new Spot(PanelClose, "Close button (X)", Panel, SpotKind.Click, Anchor.Left, 834, 35, 20, 20),
-            // Measured on the phone, so these are only as right as the guess that the cards keep to the same edges on a PC.
-            new Spot(Lead2Bar, "Your lead's HP bar", Duo, SpotKind.Bar, Anchor.Left, 191, 83, 114, 8),
-            new Spot(Partner2Bar, "Your second Lumit's HP bar", Duo, SpotKind.Bar, Anchor.Left, 518, 83, 114, 8),
-            new Spot(Enemy1Bar, "Left wild Lumit's HP bar", Duo, SpotKind.Bar, Anchor.Right, 1319, 83, 110, 8),
-            new Spot(Enemy2Bar, "Right wild Lumit's HP bar", Duo, SpotKind.Bar, Anchor.Right, 1647, 83, 110, 8),
-            new Spot(Enemy1Card, "Left wild Lumit's name", Duo, SpotKind.Text, Anchor.Right, 1291, 34, 140, 44),
-            new Spot(Enemy2Card, "Right wild Lumit's name", Duo, SpotKind.Text, Anchor.Right, 1618, 34, 140, 44),
+            // A 2v2 on the PC (measured in the owner's game on 14 November): two cards a side, one above the other, unlike
+            // the phone's four in a row. Your lead's is the lower one on the left, your second Lumit's the upper one. The
+            // wild Lumits' are on the right: the upper card is the left one on the field (picked first as a target), the
+            // lower card the right one. Each bar spot runs the bar's length (106 px) in its middle rows; each name spot
+            // stops short of the card's portrait, which can be yellow (Lithorse's mane starts at x 1720 on the lower card).
+            new Spot(Lead2Bar, "Your lead's HP bar (lower card)", Duo, SpotKind.Bar, Anchor.Left, 243, 223, 106, 5),
+            new Spot(Partner2Bar, "Your second Lumit's HP bar (upper card)", Duo, SpotKind.Bar, Anchor.Left, 195, 85, 106, 5),
+            new Spot(Enemy1Bar, "Left wild Lumit's HP bar (upper card)", Duo, SpotKind.Bar, Anchor.Right, 1651, 74, 106, 5),
+            new Spot(Enemy2Bar, "Right wild Lumit's HP bar (lower card)", Duo, SpotKind.Bar, Anchor.Right, 1603, 201, 106, 5),
+            new Spot(Enemy1Card, "Left wild Lumit's name (upper card)", Duo, SpotKind.Text, Anchor.Right, 1606, 34, 154, 30),
+            new Spot(Enemy2Card, "Right wild Lumit's name (lower card)", Duo, SpotKind.Text, Anchor.Right, 1558, 161, 154, 30),
             new Spot(Back, "Back button", DuoTarget, SpotKind.Text, Anchor.Center, 1225, 806, 80, 31),
             new Spot(Enemy1Tap, "Left wild Lumit (clicked)", DuoTarget, SpotKind.Click, Anchor.Center, 1174, 569, 43, 43),
             new Spot(Enemy2Tap, "Right wild Lumit (clicked)", DuoTarget, SpotKind.Click, Anchor.Center, 1494, 612, 43, 43),
@@ -136,6 +140,23 @@ namespace AutoClicker
             }
             return result;
         }
+
+        /// <summary>One of a 2v2's four HP bars: how full, counting only red that starts at the bar's left end.</summary>
+        public static double DuoBar(Bitmap shot, Dictionary<string, Rectangle> spots, string key)
+        {
+            return ScreenText.BarFromLeft(shot, spots[key], ScreenText.IsRed);
+        }
+
+        /// <summary>
+        /// A 2v2 is showing: both your Lumits' bars, and a wild Lumit's. A 1v1 has neither of your 2v2 bars, while its
+        /// red card frame and a red radiant's portrait sit where your lead's and the lower wild bar would be.
+        /// </summary>
+        public static bool DuoShowing(Bitmap shot, Dictionary<string, Rectangle> spots)
+        {
+            if (shot == null) return false;
+            return DuoBar(shot, spots, Lead2Bar) > 0.01 && DuoBar(shot, spots, Partner2Bar) > 0.01 &&
+                   Math.Max(DuoBar(shot, spots, Enemy1Bar), DuoBar(shot, spots, Enemy2Bar)) > 0.01;
+        }
     }
 
     /// <summary>What a run needs for catching and healing.</summary>
@@ -147,6 +168,17 @@ namespace AutoClicker
         public bool Practice;
         /// <summary>Catch a radiant by itself, rather than stopping the run before attacking it.</summary>
         public bool CatchRadiants;
+        /// <summary>
+        /// No fighting: the radiant check's step is the Run button, and it's clicked for every Lumit that isn't a radiant,
+        /// in 2v2s too. Ticked Lumits aren't caught. A radiant is caught as usual, or stops the run.
+        /// </summary>
+        public bool RadiantsOnly;
+        /// <summary>
+        /// Fight a radiant found in a 2v2, as in a 1v1. Off: the run stops before anything is clicked, for you to catch it.
+        /// Off while 2v2 target clicks haven't been seen working on the PC: a click on the wrong Lumit, or a second Lumit's
+        /// move that hits both, could kill the radiant. Nothing turns it on yet but the tests.
+        /// </summary>
+        public bool CatchDuoRadiants;
         /// <summary>In a 2v2, your second Lumit's moves for weakening a Lumit you catch, and for finishing off one you don't (0–5).</summary>
         public int PartnerWeaken = 2, PartnerKill = 5;
         /// <summary>Background mode: park the real pointer on a wild Lumit while clicking it as a target, like map clicks.</summary>

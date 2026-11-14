@@ -19,7 +19,7 @@ namespace AutoClicker
         readonly StepSpace space;
         readonly IList<ClickPoint> screenSteps;
         readonly Dictionary<string, Rectangle> picked;
-        readonly CheckBox chkCatch, chkPractice, chkRadiants, chkDragReal;
+        readonly CheckBox chkCatch, chkPractice, chkRadiants, chkRadiantsOnly, chkDragReal;
         readonly ComboBox cbPartnerWeaken, cbPartnerKill;
         readonly TrackBar trkHeal;
         readonly NumericUpDown numMaxHp;
@@ -44,7 +44,7 @@ namespace AutoClicker
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(580, 696);
+            ClientSize = new Size(580, 722);
 
             int ticked = counter.Entries().Count(e => e.Catch);
             chkCatch = new CheckBox
@@ -68,15 +68,26 @@ namespace AutoClicker
                 Location = new Point(14, 64),
                 Checked = settings.CatchRadiants
             };
+            chkRadiantsOnly = new CheckBox
+            {
+                Text = "Radiants only: no fighting, it runs from every Lumit that isn't a radiant",
+                AutoSize = true,
+                Location = new Point(14, 90),
+                Checked = settings.RadiantsOnly
+            };
             Controls.Add(chkCatch);
             Controls.Add(chkPractice);
             Controls.Add(chkRadiants);
-            Controls.Add(new Label { Text = "In a 2v2, your second Lumit weakens with its", AutoSize = true, Location = new Point(16, 95) });
-            cbPartnerWeaken = SlotBox(268, 91, settings.PartnerWeaken);
-            Controls.Add(new Label { Text = "move, finishes with its", AutoSize = true, Location = new Point(378, 95) });
-            cbPartnerKill = SlotBox(500, 91, settings.PartnerKill);
+            Controls.Add(chkRadiantsOnly);
+            // Ticked Lumits are run from too, so their catching has nothing to do meanwhile.
+            chkCatch.Enabled = !chkRadiantsOnly.Checked;
+            chkRadiantsOnly.CheckedChanged += delegate { chkCatch.Enabled = !chkRadiantsOnly.Checked; };
+            Controls.Add(new Label { Text = "In a 2v2, your second Lumit weakens with its", AutoSize = true, Location = new Point(16, 121) });
+            cbPartnerWeaken = SlotBox(268, 117, settings.PartnerWeaken);
+            Controls.Add(new Label { Text = "move, finishes with its", AutoSize = true, Location = new Point(378, 121) });
+            cbPartnerKill = SlotBox(500, 117, settings.PartnerKill);
 
-            var grpHeal = new GroupBox { Text = "Healing with Bark Tea", Location = new Point(12, 122), Size = new Size(556, 112) };
+            var grpHeal = new GroupBox { Text = "Healing with Bark Tea", Location = new Point(12, 148), Size = new Size(556, 112) };
             Controls.Add(grpHeal);
             grpHeal.Controls.Add(new Label { Text = "After a fight, feed 3 Bark Tea if your Lumit has fewer than:", AutoSize = true, Location = new Point(14, 22) });
             numMaxHp = new NumericUpDown { Location = new Point(490, 44), Width = 54, Minimum = 1, Maximum = 99999, TextAlign = HorizontalAlignment.Right };
@@ -103,7 +114,7 @@ namespace AutoClicker
                 UpdateHealLabel();
             };
 
-            var grpSpots = new GroupBox { Text = "Where things are in the game window", Location = new Point(12, 242), Size = new Size(556, 404) };
+            var grpSpots = new GroupBox { Text = "Where things are in the game window", Location = new Point(12, 268), Size = new Size(556, 404) };
             Controls.Add(grpSpots);
             lvSpots = new ListView
             {
@@ -143,10 +154,10 @@ namespace AutoClicker
             lblTest = new Label { Location = new Point(262, 316), Size = new Size(282, 76) };
             grpSpots.Controls.Add(lblTest);
 
-            AddButton(this, "Catch log", 12, 658, 90, 28, delegate { OpenLog(); });
-            var ok = new Button { Text = "OK", Location = new Point(402, 658), Size = new Size(80, 28) };
+            AddButton(this, "Catch log", 12, 684, 90, 28, delegate { OpenLog(); });
+            var ok = new Button { Text = "OK", Location = new Point(402, 684), Size = new Size(80, 28) };
             ok.Click += delegate { Commit(); };
-            var cancel = new Button { Text = "Cancel", Location = new Point(488, 658), Size = new Size(80, 28), DialogResult = DialogResult.Cancel };
+            var cancel = new Button { Text = "Cancel", Location = new Point(488, 684), Size = new Size(80, 28), DialogResult = DialogResult.Cancel };
             Controls.Add(ok);
             Controls.Add(cancel);
             AcceptButton = ok;
@@ -159,6 +170,10 @@ namespace AutoClicker
             tips.SetToolTip(chkRadiants, "Strike's damage is measured in each fight. It attacks only while the radiant's HP is above 1.8 times that:\n" +
                                          "1.5 for a crit, plus 20%. Then it uses Capture, and always keeps the catch.\n" +
                                          "Needs the radiant check in Alerts… and a chosen game window. Off: a radiant stops the run before it attacks.");
+            tips.SetToolTip(chkRadiantsOnly, "For hunting radiants. Make the step checked for radiants (in Alerts…) the Run button, bottom left in a fight.\n" +
+                                             "Every Lumit that isn't a radiant gets that step: ticked ones, and 2v2s too. A radiant gets Strike and\n" +
+                                             "Capture as above, or stops the run with that off. Keep a Continue step for after a radiant is caught.\n" +
+                                             "Needs the radiant check in Alerts… and a chosen game window.");
             tips.SetToolTip(trkHeal, "Your Lumit's HP is measured on your last turn of each fight. 0 = never heal.");
             tips.SetToolTip(numMaxHp, "Your fighting Lumit's full HP (Infibex: 182), used to turn its HP bar into a number.");
 
@@ -350,6 +365,7 @@ namespace AutoClicker
             settings.CatchOn = chkCatch.Checked;
             settings.CatchPractice = chkPractice.Checked;
             settings.CatchRadiants = chkRadiants.Checked;
+            settings.RadiantsOnly = chkRadiantsOnly.Checked;
             settings.PartnerWeaken = cbPartnerWeaken.SelectedIndex;
             settings.PartnerKill = cbPartnerKill.SelectedIndex;
             settings.HealBelowHp = trkHeal.Value;

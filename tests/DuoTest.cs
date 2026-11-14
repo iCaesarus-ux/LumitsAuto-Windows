@@ -66,6 +66,9 @@ namespace AutoClicker
             public readonly List<string> Lead = new List<string>(), Partner = new List<string>(), Trace = new List<string>(), Odd = new List<string>();
             public readonly List<Wild> CaughtQueue = new List<Wild>();
             public int Keeps, Rounds, IgnoredClicks;
+            /// <summary>Radiants only: the Run button (bottom left), runs made, and fights still to come after one is run from.</summary>
+            public Rectangle RunArea;
+            public int Runs, FightsLeft = -1;
 
             readonly Dictionary<string, Rectangle> spots;
             readonly Rectangle[] moves = new Rectangle[6];
@@ -164,11 +167,24 @@ namespace AutoClicker
                 switch (State)
                 {
                     case Screen.Map:
+                        if (FightsLeft == 0)
+                        {
+                            Finished = true;
+                            break;
+                        }
+                        if (FightsLeft > 0) FightsLeft--;
                         State = Screen.LeadMenu;
                         break;
                     case Screen.LeadMenu:
                     case Screen.PartnerMenu:
-                        if (spots[CatchSpots.Capture].Contains(p))
+                        if (RunArea.Contains(p))
+                        {
+                            Runs++;
+                            Trace.Add("Run");
+                            chooserIsLead = true;
+                            State = Screen.Map;
+                        }
+                        else if (spots[CatchSpots.Capture].Contains(p))
                         {
                             capturing = true;
                             ToTarget();
@@ -301,14 +317,37 @@ namespace AutoClicker
             public List<string> Activity = new List<string>();
         }
 
-        static Played Play(LumitCounter counter, Action<Game> setUp)
+        /// <summary>The Run button, bottom left in a fight (the boot), as the radiant check's step in radiants-only runs.</summary>
+        static readonly Rectangle RunButton = new Rectangle(164, 914, 50, 50);
+
+        /// <summary>
+        /// The phone's 2v2 spots, its four cards in a row along the top, which these phone pictures have. The app's own are
+        /// the PC's, two cards a side, one above the other.
+        /// </summary>
+        static Dictionary<string, Rectangle> PhoneDuoSpots()
         {
-            Dictionary<string, Rectangle> spots = CatchSpots.Resolve(new Size(W, H), null);
+            var size = new Size(W, H);
+            Func<string, Anchor, int, int, int, int, Rectangle> at = (key, anchor, x, y, w, h) => new Spot(key, "", "", SpotKind.Bar, anchor, x, y, w, h).For(size);
+            return new Dictionary<string, Rectangle>
+            {
+                { CatchSpots.Lead2Bar, at(CatchSpots.Lead2Bar, Anchor.Left, 191, 83, 114, 8) },
+                { CatchSpots.Partner2Bar, at(CatchSpots.Partner2Bar, Anchor.Left, 518, 83, 114, 8) },
+                { CatchSpots.Enemy1Bar, at(CatchSpots.Enemy1Bar, Anchor.Right, 1319, 83, 110, 8) },
+                { CatchSpots.Enemy2Bar, at(CatchSpots.Enemy2Bar, Anchor.Right, 1647, 83, 110, 8) },
+                { CatchSpots.Enemy1Card, at(CatchSpots.Enemy1Card, Anchor.Right, 1291, 34, 140, 44) },
+                { CatchSpots.Enemy2Card, at(CatchSpots.Enemy2Card, Anchor.Right, 1618, 34, 140, 44) },
+            };
+        }
+
+        static Played Play(LumitCounter counter, Action<Game> setUp, bool radiantsOnly = false)
+        {
+            Dictionary<string, Rectangle> spots = CatchSpots.Resolve(new Size(W, H), PhoneDuoSpots());
             Game game = null;
             var ready = new ManualResetEvent(false);
             var ui = new Thread(() =>
             {
                 game = new Game(spots);
+                if (radiantsOnly) game.RunArea = RunButton;
                 setUp(game);
                 game.Redraw();
                 game.Show();
@@ -327,7 +366,9 @@ namespace AutoClicker
             var steps = new[]
             {
                 new ClickPoint { X = 880, Y = 500, Width = 40, Height = 40, WaitForScreen = true, WatchArea = corner, Snapshot = Snapshot.FromBitmap(map, corner), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = 20 },
-                new ClickPoint { X = 1240, Y = 932, Width = 120, Height = 26, WaitForScreen = true, WatchArea = watch, Snapshot = Snapshot.FromBitmap(leadMenu, watch), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = 30 },
+                radiantsOnly
+                    ? new ClickPoint { X = RunButton.X, Y = RunButton.Y, Width = RunButton.Width, Height = RunButton.Height, WaitForScreen = true, WatchArea = watch, Snapshot = Snapshot.FromBitmap(leadMenu, watch), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = 30 }
+                    : new ClickPoint { X = 1240, Y = 932, Width = 120, Height = 26, WaitForScreen = true, WatchArea = watch, Snapshot = Snapshot.FromBitmap(leadMenu, watch), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = 30 },
                 new ClickPoint { X = 880, Y = 840, Width = 60, Height = 30, WaitForScreen = true, WatchArea = new Rectangle(760, 160, 300, 70), Snapshot = Snapshot.FromBitmap(victory, new Rectangle(760, 160, 300, 70)), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = 30 },
             };
             var played = new Played { Game = game, Counter = counter };
@@ -348,6 +389,7 @@ namespace AutoClicker
                 {
                     CatchOn = true,
                     CatchRadiants = true,
+                    RadiantsOnly = radiantsOnly,
                     HealBelowHp = 0,
                     LeadMaxHp = 182,
                     PartnerWeaken = 2,
@@ -455,6 +497,17 @@ namespace AutoClicker
                 Console.WriteLine("      Lead: " + string.Join(", ", heavy.Game.Lead) + "; second: " + string.Join(", ", heavy.Game.Partner));
                 Check(heavy.Game.Lead.FirstOrDefault() == "move4>1", "The lead used Heavy Strike on Finny, on the right");
                 Check(heavy.Game.Partner.FirstOrDefault() == "move5>0", "The second Lumit used its bottom-right move on Piroink");
+
+                Console.WriteLine("\n== Radiants only, both ticked: two 2v2s in a row, no radiant");
+                counter.SetCatch(piroink, true);
+                int metBefore = counter.Total;
+                var clock = Stopwatch.StartNew();
+                Played run = Play(counter, g => { g.FightsLeft = 2; }, radiantsOnly: true);
+                Console.WriteLine("      " + string.Join(", ", run.Game.Trace) + " in " + clock.ElapsedMilliseconds + " ms; app: " + string.Join(" / ", run.Activity.Where(a => a.Contains("Run"))));
+                Check(run.Game.Runs == 2 && run.Game.Lead.Count + run.Game.Partner.Count == 0 && run.Game.Odd.Count == 0, "Each 2v2 got the Run step, with no move, Capture or stray click");
+                Check(run.Result.Problem == null && run.Game.Keeps == 0, "No stop, and nothing caught");
+                Check(counter.Total - metBefore == 4, "Both wild Lumits of each 2v2 were counted (" + (counter.Total - metBefore) + " of 4)");
+                Check(run.Activity.Any(a => a.Contains("no radiant in this 2v2, so step 2 (Run)")), "The status line says why it ran");
             }
             finally
             {

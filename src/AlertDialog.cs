@@ -62,7 +62,7 @@ namespace AutoClicker
             for (int i = 1; i <= Math.Max(1, stepCount); i++) cbStep.Items.Add(i.ToString());
             cbStep.SelectedIndex = Math.Max(0, Math.Min(cbStep.Items.Count - 1, settings.AlertStep - 1));
             grpLook.Controls.Add(cbStep);
-            AddLabel(grpLook, "(the attack step)", 246, 26).ForeColor = SystemColors.GrayText;
+            AddLabel(grpLook, settings.RadiantsOnly ? "(the Run step, radiants only)" : "(the attack step)", 246, 26).ForeColor = SystemColors.GrayText;
 
             AddLabel(grpLook, "Name area:", 14, 58);
             lblArea = AddLabel(grpLook, "", 86, 58);

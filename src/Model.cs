@@ -225,6 +225,8 @@ namespace AutoClicker
         public bool RadiantFound;
         /// <summary>The radiant's name as read off its card, or "" if it couldn't be read.</summary>
         public string RadiantName = "";
+        /// <summary>Where it is, for one in a 2v2 ("in a 2v2, the left one (upper card)"); "" for a 1v1.</summary>
+        public string RadiantPlace = "";
         /// <summary>It stopped on its own for a reason worth sending to your phone.</summary>
         public bool NotifyPhone;
         /// <summary>A stop you asked to always hear about (Infibex fainted, out of Bark Tea): the phone alert's title; null otherwise.</summary>
