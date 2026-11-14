@@ -32,7 +32,7 @@ namespace AutoClicker
         /// <summary>The pretend game: shows a picture for each screen, and reacts to clicks.</summary>
         class Game : Form
         {
-            public enum Screen { Map, Turn, Wait, Fainted, Caught, Victory }
+            public enum Screen { Map, Turn, Wait, Fainted, Caught, Victory, Unknown }
 
             public double MaxHp = 118, Hp = 118, StrikeDamage = 20, CaptureChance = 1;
             public double[] ScriptedCrits;
@@ -57,6 +57,8 @@ namespace AutoClicker
             public readonly Queue<bool> NextFights = new Queue<bool>();
             /// <summary>From each run that worked to the next click on the stone, in ms.</summary>
             public readonly List<long> RunToStoneMs = new List<long>();
+            /// <summary>Someone stands on step 1's spot on the map; with StandingGoes, only until the stone is first clicked.</summary>
+            public bool Standing, StandingGoes;
             readonly Stopwatch clock = Stopwatch.StartNew();
             long ranAt = -1;
 
@@ -110,6 +112,17 @@ namespace AutoClicker
                     {
                         case Screen.Map:
                             g.FillRectangle(Brushes.Olive, 0, 0, 1920, 1025);
+                            if (Standing)
+                            {
+                                // Someone on step 1's spot (the steps' picture of it is the bare map).
+                                g.FillRectangle(Brushes.Crimson, 25, 305, 50, 50);
+                                g.FillRectangle(Brushes.White, 35, 315, 30, 15);
+                            }
+                            break;
+                        case Screen.Unknown:
+                            // A screen none of the steps know, that clicks don't get past.
+                            g.FillRectangle(Brushes.DarkSlateBlue, 0, 0, 1920, 1025);
+                            g.FillRectangle(Brushes.White, 760, 400, 400, 60);
                             break;
                         case Screen.Victory:
                             g.FillRectangle(Brushes.Teal, 0, 0, 1920, 1025);
@@ -176,6 +189,7 @@ namespace AutoClicker
                         }
                         if (ranAt >= 0) RunToStoneMs.Add(clock.ElapsedMilliseconds - ranAt);
                         ranAt = -1;
+                        if (StandingGoes) Standing = false;
                         if (NextFights.Count == 0)
                         {
                             Finished = true;
@@ -235,6 +249,9 @@ namespace AutoClicker
                             Released = true;
                             State = Screen.Victory;
                         }
+                        break;
+                    case Screen.Unknown:
+                        Other.Add("unknown screen (" + p.X + "," + p.Y + ")");
                         break;
                     case Screen.Victory:
                         // The step's Continue.
@@ -302,6 +319,8 @@ namespace AutoClicker
             public List<string> Notices = new List<string>();
             public List<string> Activity = new List<string>();
             public LumitCounter Counter;
+            /// <summary>Step 1's pictures the run retook and asked to keep.</summary>
+            public List<Snapshot> Retaken = new List<Snapshot>();
         }
 
         static GameWindow WindowFor(IntPtr handle)
@@ -318,7 +337,8 @@ namespace AutoClicker
         /// <summary>The Run button, bottom left in a fight (the boot), as the radiant check's step in radiants-only runs.</summary>
         static readonly Rectangle RunButton = new Rectangle(212, 914, 50, 50);
 
-        static Played Play(Action<Game> setUp, Action<CatchOptions> options = null, bool radiantCheck = true, bool runStep = false, LumitCounter counter = null)
+        static Played Play(Action<Game> setUp, Action<CatchOptions> options = null, bool radiantCheck = true, bool runStep = false, LumitCounter counter = null,
+                           int timeoutSec = 20)
         {
             Size client = new Size(1920, 1025);
             Dictionary<string, Rectangle> spots = CatchSpots.Resolve(client, null);
@@ -353,9 +373,9 @@ namespace AutoClicker
 
                 var steps = new[]
                 {
-                    new ClickPoint { X = 900, Y = 500, Width = 40, Height = 40, WaitForScreen = true, WatchArea = corner, Snapshot = SnapshotOf(map, corner), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = 20 },
-                    new ClickPoint { X = attackArea.X, Y = attackArea.Y, Width = attackArea.Width, Height = attackArea.Height, WaitForScreen = true, WatchArea = watch, Snapshot = SnapshotOf(radiantPic, watch), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = 20 },
-                    new ClickPoint { X = 900, Y = 500, Width = 40, Height = 40, WaitForScreen = true, WatchArea = corner, Snapshot = SnapshotOf(victory, corner), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = 20 },
+                    new ClickPoint { X = 900, Y = 500, Width = 40, Height = 40, WaitForScreen = true, WatchArea = corner, Snapshot = SnapshotOf(map, corner), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = timeoutSec },
+                    new ClickPoint { X = attackArea.X, Y = attackArea.Y, Width = attackArea.Width, Height = attackArea.Height, WaitForScreen = true, WatchArea = watch, Snapshot = SnapshotOf(radiantPic, watch), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = timeoutSec },
+                    new ClickPoint { X = 900, Y = 500, Width = 40, Height = 40, WaitForScreen = true, WatchArea = corner, Snapshot = SnapshotOf(victory, corner), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = timeoutSec },
                 };
 
                 var played = new Played { Game = game, Counter = counter ?? new LumitCounter(Path.Combine(tempDir, "lumits-" + Guid.NewGuid().ToString("N") + ".txt")) };
@@ -393,6 +413,7 @@ namespace AutoClicker
                     lock (played.Activity)
                         if (activity.Length > 0 && (played.Activity.Count == 0 || played.Activity[played.Activity.Count - 1] != activity)) played.Activity.Add(activity);
                 };
+                engine.FirstStepRetaken += (area, picture) => { lock (played.Retaken) played.Retaken.Add(picture); };
                 engine.Finished += r => { played.Result = r; finished.Set(); };
                 engine.Start(run);
 
@@ -659,6 +680,51 @@ namespace AutoClicker
             }
         }
 
+        /// <summary>
+        /// Nothing the steps know shows up for a time-out: step 1's picture is retaken from the screen and step 1 clicked. Another
+        /// step's screen coming up after shows the game was on the map, only looking different; none coming up stops the run.
+        /// The new picture is kept in the steps only once the map comes back looking like it and not like the old one.
+        /// </summary>
+        static void StuckOnAScreen()
+        {
+            Console.WriteLine("\n== Stuck on a screen the steps don't know (time-outs of 3 s)");
+            var corner = new Rectangle(20, 300, 60, 60);
+            Snapshot bare, standing;
+            using (var map = new Bitmap(1920, 1025))
+            {
+                using (Graphics g = Graphics.FromImage(map)) g.FillRectangle(Brushes.Olive, 0, 0, 1920, 1025);
+                bare = Snapshot.FromBitmap(map, corner);
+                using (Graphics g = Graphics.FromImage(map))
+                {
+                    g.FillRectangle(Brushes.Crimson, 25, 305, 50, 50);
+                    g.FillRectangle(Brushes.White, 35, 315, 30, 15);
+                }
+                standing = Snapshot.FromBitmap(map, corner);
+            }
+            Check(bare.Similarity(standing) < 0.8, "Someone on step 1's spot: the map doesn't match step 1's picture (" + Math.Round(bare.Similarity(standing) * 100) + "%)");
+
+            Played stays = Play(g => { g.State = Game.Screen.Map; g.Standing = true; g.Radiant = false; g.NextFights.Enqueue(false); g.NextFights.Enqueue(false); }, timeoutSec: 3);
+            Console.WriteLine("      " + string.Join(", ", stays.Game.Trace) + "; app: " + string.Join(" / ", stays.Activity.Where(a => a.Contains("step 1"))));
+            Check(stays.Activity.Any(a => a.Contains("step 1's picture was retaken")) && stays.Game.Fights == 3 && stays.Game.AttackClicks == 2 && stays.Game.Other.Count == 0,
+                  "Someone stays on step 1's spot: its picture is retaken, step 1 clicked, and both fights after are fought: " + string.Join("; ", stays.Game.Other));
+            Check(stays.Retaken.Count == 1 && stays.Retaken[0].Similarity(standing) > 0.95, "The new picture is kept in the steps, once the map came back looking like it (" + stays.Retaken.Count + " kept)");
+            Check(stays.Result.Problem == null, "The run carried on until the test stopped it");
+
+            Played goes = Play(g => { g.State = Game.Screen.Map; g.Standing = true; g.StandingGoes = true; g.Radiant = false; g.NextFights.Enqueue(false); g.NextFights.Enqueue(false); }, timeoutSec: 3);
+            Console.WriteLine("      " + string.Join(", ", goes.Game.Trace));
+            Check(goes.Game.Fights == 3 && goes.Game.AttackClicks == 2 && goes.Game.Other.Count == 0 && goes.Result.Problem == null,
+                  "Someone stands there and walks off: both fights are fought, the map found by its old picture after");
+            Check(goes.Retaken.Count == 0, "The old picture fits again, so it stays in the steps (" + goes.Retaken.Count + " kept)");
+
+            Played stuck = Play(g => { g.State = Game.Screen.Unknown; g.Radiant = false; g.NextFights.Enqueue(false); }, timeoutSec: 3);
+            Console.WriteLine("      " + stuck.Result.Problem + "; clicked: " + string.Join(", ", stuck.Game.Other));
+            Check(stuck.Result.Problem != null && stuck.Result.Problem.StartsWith("stuck on a screen it doesn't know") && stuck.Result.AlertTitle == "Stuck on an unknown screen" &&
+                  stuck.Result.Screenshot != null && stuck.Result.Screenshot.Length > 0,
+                  "A screen clicks don't get past: after the retake and step 1's click, the run stops and always alerts, with a picture");
+            Check(stuck.Game.Other.Count >= 1 && stuck.Game.Other.Count <= 3 && stuck.Game.Other.All(c => c.StartsWith("unknown screen (9")) && stuck.Retaken.Count == 0,
+                  "Only step 1's spot was clicked there, and nothing was kept");
+        }
+
         static void Simulate()
         {
             Console.WriteLine("\n== Many fights through the decision itself, with damage varying per hit and 15% crits");
@@ -804,6 +870,8 @@ namespace AutoClicker
                 Played noCatching = Play(g => { }, c => { c.RadiantsOnly = true; c.CatchRadiants = false; }, runStep: true);
                 Console.WriteLine("      " + noCatching.Result.Problem);
                 Check(noCatching.Result.RadiantFound && noCatching.Game.Trace.Count == 0 && noCatching.Game.Runs == 0, "Catch radiants off: a radiant stops the run, with nothing clicked");
+
+                StuckOnAScreen();
 
                 string dir = Path.GetDirectoryName(Path.GetFullPath(args[0]));
                 DuoSpots(dir);

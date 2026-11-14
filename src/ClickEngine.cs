@@ -84,6 +84,12 @@ namespace AutoClicker
         readonly List<Foe> caughtOrder = new List<Foe>(); // caught in earlier rounds, in the order their caught screens come
         int ranCycle;          // radiants only: the cycle whose fight was run from
 
+        // Step 1's picture retaken from the screen, when nothing known showed up: the map may only look different now.
+        Snapshot firstStepOwn; // the picture it had before; still counts for the rest of the run
+        long retakenAt;        // when it was retaken, until another step's screen shows something happened; -1 = not waiting
+        bool retakeToSave;     // something did: the new picture is kept if the map comes back looking like it, and not the old
+        int retakeCycle;       // the pass in which it did: the map fitting the new picture counts from the next pass on
+
         /// <summary>No fighting: every Lumit but a radiant gets the radiant check's step, which is the Run button.</summary>
         bool RadiantsOnly { get { return o.Catch != null && o.Catch.RadiantsOnly; } }
 
@@ -92,6 +98,12 @@ namespace AutoClicker
 
         /// <summary>Raised on the worker thread when a run ends.</summary>
         public event Action<RunResult> Finished;
+
+        /// <summary>
+        /// Raised on the worker thread when step 1's picture, retaken from the screen during the run, has proved right (the map
+        /// came back looking like it, and not like the old one): (its watch area, the new picture), to keep in the steps.
+        /// </summary>
+        public event Action<Rectangle, Snapshot> FirstStepRetaken;
 
         /// <summary>Raised on the worker thread for news worth a phone alert while the run goes on: (title, message, JPEG or null).</summary>
         public event Action<string, string, byte[]> Notice;
@@ -153,6 +165,10 @@ namespace AutoClicker
             standInPending = false;
             caughtOrder.Clear();
             ranCycle = 0;
+            firstStepOwn = null;
+            retakenAt = -1;
+            retakeToSave = false;
+            retakeCycle = 0;
             window = o.Space == null ? null : o.Space.Window;
             if (window != null)
             {
@@ -245,7 +261,7 @@ namespace AutoClicker
                         p = o.Points[i];
                         CheckRadiantLost(i);
                         CheckEnemy(i, false); // as early as possible, so a radiant alert goes out straight away
-                        if (i == 0) MaybeHeal(); // on the map, before heading into the next fight
+                        if (i == 0 && retakenAt < 0) MaybeHeal(); // on the map, before heading into the next fight (not on a hunch that it's the map)
                         SetActivity("");
                         Pause(Triangular(p.ReactMinMs, p.ReactMaxMs, 0.3)); // human reaction time
                     }
@@ -275,6 +291,7 @@ namespace AutoClicker
             {
                 TakeBreak();
                 nextBreak = NextBreakTime();
+                if (retakenAt >= 0) retakenAt = clock.ElapsedMilliseconds; // the break isn't time the game had to react
             }
             cycle = completed + 1;
             return false;
@@ -1317,6 +1334,7 @@ namespace AutoClicker
                 ThrowIfStopped();
                 if (CaughtScreenShowing())
                 {
+                    SomethingHappened();
                     HandleCaught();
                     deadline = clock.ElapsedMilliseconds + p.TimeoutSec * 1000L;
                     SetActivity("waiting for step " + (i + 1));
@@ -1324,13 +1342,18 @@ namespace AutoClicker
                 }
                 if (FaintedChoiceShowing())
                 {
+                    SomethingHappened();
                     SendInStandIn();
                     deadline = clock.ElapsedMilliseconds + p.TimeoutSec * 1000L;
                     SetActivity("waiting for step " + (i + 1));
                     continue;
                 }
                 CheckFainted(i);
-                if (Matches(p)) return i;
+                if (Matches(p))
+                {
+                    if (i != 0) SomethingHappened();
+                    return i;
+                }
                 // Radiants only: after a run, the first step's screen (the map) means the fight is over, and the steps for
                 // after a fought one, like Continue, won't come. So it goes straight on, rather than after 5 s.
                 if (ranCycle == cycle && o.NameStep > 0 && i > o.NameStep && o.Points[0].Waits && Matches(o.Points[0])) return 0;
@@ -1339,6 +1362,7 @@ namespace AutoClicker
                 // your turn's screen having gone.
                 if (prev >= 0 && duoCycle == cycle && o.Catch != null && !DuoMenuUp(CurrentFrame())) prevGone = true;
 
+                bool anyShowing = false;
                 for (int j = 0; j < o.Points.Length; j++)
                 {
                     if (j == i || !o.Points[j].Waits) continue;
@@ -1348,6 +1372,8 @@ namespace AutoClicker
                         if (j == prev) prevGone = true;
                         continue;
                     }
+                    anyShowing = true;
+                    if (j != 0) SomethingHappened();
                     if (j == prev && prevGone)
                     {
                         // The previous screen went away and came back, e.g. the enemy survived and the
@@ -1365,12 +1391,22 @@ namespace AutoClicker
                     }
                 }
 
+                // Step 1's picture was retaken and it was clicked, and still no other step's screen: the game really is
+                // somewhere the steps don't know. That's for you to see to.
+                if (retakenAt >= 0 && now - retakenAt > (MaxMissedTimeouts - 1) * 1000L * p.TimeoutSec)
+                    throw StillStuck((int)((now - retakenAt) / 1000));
+
                 if (now > deadline)
                 {
                     if (p.OnTimeout == TimeoutAction.Skip) return -1;
                     if (p.OnTimeout == TimeoutAction.ClickAnyway) return i;
-                    // Nothing recognisable is showing: keep looking a while before giving up.
-                    if (++missed >= MaxMissedTimeouts)
+                    // Nothing recognisable is showing. The game may still be on the first step's screen, only looking
+                    // different now, so its picture is retaken from the screen and it's clicked. Another step's screen
+                    // coming up after that shows it was; if none does, the run stops (above).
+                    missed++;
+                    if (!anyShowing && RetakeFirstStep(missed * p.TimeoutSec)) return 0;
+                    // Otherwise keep looking a while before giving up.
+                    if (missed >= MaxMissedTimeouts)
                         throw new StopRun("no step's screen showed up for " + missed * p.TimeoutSec +
                                           " s (it was waiting for step " + (i + 1) + ")");
                     SetActivity("step " + (i + 1) + " hasn't shown up, still looking (" + (missed + 1) + "/" + MaxMissedTimeouts + ")");
@@ -1378,6 +1414,68 @@ namespace AutoClicker
                 }
                 Pause(PollMs);
             }
+        }
+
+        /// <summary>
+        /// Nothing the steps know has shown up for a time-out: retakes step 1's picture from the screen, as its Retake button
+        /// would. True when it did, and step 1 is to be clicked. Only once at a time: the next waits until the first has
+        /// proved right or wrong.
+        /// </summary>
+        bool RetakeFirstStep(int stuckSec)
+        {
+            ClickPoint first = o.Points[0];
+            if (retakenAt >= 0 || retakeToSave || !first.Waits) return false;
+            if (!o.Points.Skip(1).Any(s => s.Waits)) return false; // no other step's screen could show it worked
+            if (radiantCycle == cycle && !radiantCaught) return false; // nothing is clicked on a hunch in a radiant's fight
+            // Only a screen that holds still: one fading in or out would be taken halfway.
+            Snapshot before = ReadArea(first.WatchArea);
+            Pause(1000);
+            Snapshot now = ReadArea(first.WatchArea);
+            if (before == null || now == null || before.Similarity(now, first.WatchMask()) * 100 < first.MatchPercent) return false;
+            if (o.Points.Any(s => s.Waits && Matches(s))) return false; // a step's screen came up meanwhile after all
+            if (firstStepOwn == null) firstStepOwn = first.Snapshot;
+            first.Snapshot = now; // the run's own copy of the step; yours is changed only once it proves right
+            retakenAt = clock.ElapsedMilliseconds;
+            retakeToSave = false;
+            SetActivity("nothing known for " + stuckSec + " s, so step 1's picture was retaken from the screen; clicking it");
+            return true;
+        }
+
+        /// <summary>After step 1's picture was retaken and clicked, another step's screen came up: the game wasn't stuck.</summary>
+        void SomethingHappened()
+        {
+            if (retakenAt < 0) return;
+            retakenAt = -1;
+            retakeToSave = true;
+            retakeCycle = cycle;
+        }
+
+        /// <summary>
+        /// Step 1's retaken picture fits the screen. In a later pass than the one where something happened (so after a
+        /// fight), and with the old picture not fitting, it's kept.
+        /// </summary>
+        void FirstStepSeen(Snapshot live, bool[] mask)
+        {
+            if (!retakeToSave || cycle <= retakeCycle) return;
+            retakeToSave = false;
+            ClickPoint first = o.Points[0];
+            if (firstStepOwn.Similarity(live, mask) * 100 >= first.MatchPercent) return; // the old one fits too: nothing to change
+            SetActivity("step 1's retaken picture fits the map again, so it's kept in your steps");
+            var kept = FirstStepRetaken;
+            if (kept != null) kept(first.WatchArea, first.Snapshot);
+        }
+
+        /// <summary>The stop when step 1's picture was retaken and clicked, and no other step's screen came up after.</summary>
+        StopRun StillStuck(int seconds)
+        {
+            o.Points[0].Snapshot = firstStepOwn; // the retaken one was of a screen the steps don't know
+            retakenAt = -1;
+            return new StopRun("stuck on a screen it doesn't know: step 1's picture was retaken from it and clicked, but no other step's screen came up in " +
+                               seconds + " s")
+            {
+                AlertTitle = "Stuck on an unknown screen",
+                Screenshot = Evidence()
+            };
         }
 
         int PreviousWaitingStep(int i)
@@ -1405,7 +1503,19 @@ namespace AutoClicker
                 return false;
             }
             screenFailures = 0;
-            if (p.Snapshot.Similarity(live, p.WatchMask()) * 100 >= p.MatchPercent) return true;
+            bool[] mask = p.WatchMask();
+            bool retaken = firstStepOwn != null && ReferenceEquals(p, o.Points[0]);
+            if (p.Snapshot.Similarity(live, mask) * 100 >= p.MatchPercent)
+            {
+                if (retaken) FirstStepSeen(live, mask);
+                return true;
+            }
+            // Its old picture still counts. Fitting again means the change was passing, so the new one isn't kept.
+            if (retaken && firstStepOwn.Similarity(live, mask) * 100 >= p.MatchPercent)
+            {
+                retakeToSave = false;
+                return true;
+            }
             // Your attack button greys out when your Lumit is low on MP (after a few Heat Siphons), so when catching,
             // your turn is also recognised by the menu itself.
             return IsYourTurnStep(p) && YourTurnMenuLit(CurrentFrame());

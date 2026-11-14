@@ -45,6 +45,15 @@ says how it's used. Split from LumitsAuto, which also holds the Android app (not
   Without that, dimmed buttons look much the same darkened by the tint (a lit Strike label scored 76% against a
   dimmed one through it, 41% as taken). Real pairs went from 11 to 25% to 90%; every dimmed button scores as before.
   Dusk and dawn are assumed to lie on the way to the night's tint; not seen yet.
+- **Stuck on an unknown screen (14 November, asked by the owner):** after one time-out with no step's screen,
+  `ClickEngine.RetakeFirstStep` retakes step 1's picture from the screen (only a screen held still for 1 s, not in a
+  radiant's fight, only with another waiting step) and returns step 1 to click. Another step's screen (or a caught or
+  fainted screen) after it is `SomethingHappened`; none within two of the awaited step's time-outs throws `StillStuck`
+  (alert title "Stuck on an unknown screen", always sent). The old picture still counts for the rest of the run
+  (`firstStepOwn`); `FirstStepSeen` raises `FirstStepRetaken` (MainForm puts it in the steps and saves) only once the
+  map fits the new picture and not the old in a later pass than the one where something happened. Healing waits until the retake proved right. On a
+  captcha this clicks step 1's spot there once before stopping (the owner was told). Tests: `StuckOnAScreen`. Not run in
+  the game yet.
 - The owner's saved settings had the radiant check off (`alert=0`) on 14 November.
 - **Settings not saving (not solved):** `%APPDATA%\AutoClicker\settings.txt` was last written on 30 October, in an
   older format (no `catchRadiants`), while `lumits.txt` beside it was written during a run on 14 November. Saving

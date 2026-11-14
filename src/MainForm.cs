@@ -59,6 +59,7 @@ namespace AutoClicker
             engine.Progress += OnEngineProgress;
             engine.Finished += OnEngineFinished;
             engine.Notice += (title, message, picture) => PostToUi(delegate { SendPhoneAlert(title, message, picture); });
+            engine.FirstStepRetaken += (area, picture) => PostToUi(delegate { KeepRetakenPicture(area, picture); });
             counterChanged = delegate { PostToUi(UpdateCounterLabel); };
             counter.Changed += counterChanged;
         }
@@ -431,6 +432,17 @@ namespace AutoClicker
         }
 
         const string AppTitle = "Auto Clicker";
+
+        /// <summary>
+        /// A run got stuck, retook step 1's picture from the screen, and the map has since come back looking like it and not
+        /// like the old one: the new picture replaces the old in your steps, as its Retake button would.
+        /// </summary>
+        void KeepRetakenPicture(Rectangle area, Snapshot picture)
+        {
+            if (picture == null || points.Count == 0 || points[0].WatchArea != area) return; // the step was changed since
+            points[0].Snapshot = picture;
+            SaveSettings();
+        }
 
         void UpdateEnabledStates()
         {

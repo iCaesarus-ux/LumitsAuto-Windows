@@ -46,8 +46,21 @@ is really on:
   Victory is still showing), it carries on from that step. When that's the first step (the map)
   after the fight's step, the fight is over, and the next one counts as a new fight;
 - if the previous step's screen comes back (the enemy survived), it clicks it again right away;
-- if nothing it knows shows up, it keeps looking for three of the step's time-outs (about 90 s by
-  default) and only then stops, sending the reason and a screenshot to your phone.
+- if nothing it knows shows up for one of the step's time-outs (30 s by default), the game may
+  still be on the first step's screen (the map), only looking different, say with someone standing
+  on the watched spot. So the app retakes step 1's picture from the screen, as its *Retake snapshot
+  from screen* button would, and clicks step 1. It does that only once the screen has held still
+  for a second, never in a radiant's fight, and only if another step has a picture to wait for;
+- if after that no other step's screen comes up within two more time-outs (60 s by default), the
+  game is somewhere the steps don't know: the run stops and always alerts your phone ("Stuck on an
+  unknown screen", with a screenshot), whatever *Also when a run stops by itself* says. Note that
+  this means step 1's spot is clicked once on whatever that screen is (a captcha too);
+- the new picture goes into your steps only once the map has come back looking like it and not
+  like the old one. If the old one fits again (whoever stood there walked off), your steps stay as
+  they were. For the rest of the run both count;
+- when step 1's picture can't be retaken (the screen keeps changing, or step 1 doesn't wait for a
+  screen), it keeps looking for three of the step's time-outs (about 90 s by default) and only then
+  stops, sending the reason and a screenshot to your phone.
 
 ## Alerts (radiants and stops)
 
