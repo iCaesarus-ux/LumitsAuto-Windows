@@ -521,6 +521,7 @@ namespace AutoClicker
                 p.X += dx;
                 p.Y += dy;
                 if (p.WatchArea.Width > 0) p.WatchArea.Offset(dx, dy);
+                p.OffsetShapes(dx, dy);
             }
             if (settings.AlertArea.Width > 0) settings.AlertArea.Offset(dx, dy);
             foreach (string key in settings.CatchSpots.Keys.ToList())
@@ -748,6 +749,7 @@ namespace AutoClicker
                 ClickPoint c = p.Clone();
                 c.X += o.X;
                 c.Y += o.Y;
+                c.OffsetShapes(o.X, o.Y);
                 return c;
             }).ToList();
         }
@@ -1103,11 +1105,11 @@ namespace AutoClicker
             {
                 ClickPoint p = points[i];
                 var item = new ListViewItem((i + 1).ToString());
-                item.SubItems.Add(p.X + ", " + p.Y + (p.IsArea ? "   " + p.Width + "×" + p.Height : ""));
+                item.SubItems.Add(p.X + ", " + p.Y + (p.IsArea ? "   " + p.Width + "×" + p.Height + (p.IsLasso ? " lasso" : "") : ""));
                 item.SubItems.Add(p.Button + (p.DoubleClick ? " ×2" : "") + (p.BorrowPointer ? ", real ptr" : ""));
                 if (p.Waits)
                 {
-                    item.SubItems.Add("≥ " + p.MatchPercent + "%" + (p.IsArea && p.WatchArea == p.Area ? "" : " (other)"));
+                    item.SubItems.Add("≥ " + p.MatchPercent + "%" + (p.WatchesClickArea ? "" : " (other)"));
                     item.SubItems.Add(p.ReactMinMs.ToString("N0") + "–" + p.ReactMaxMs.ToString("N0") + " ms");
                 }
                 else
@@ -1167,10 +1169,11 @@ namespace AutoClicker
                 {
                     Rectangle vs = SystemInformation.VirtualScreen;
                     using (Bitmap frame = ScreenGrab.CaptureVirtualScreen())
-                    using (var overlay = new PickOverlay(frame, vs, ScreenCopies(space), false))
+                    using (var overlay = new PickOverlay(frame, vs, ScreenCopies(space), false, true, true))
                     {
                         overlay.ShowDialog();
-                        foreach (Rectangle r in overlay.Picks) added.Add(StepFromPick(frame, vs, r, space));
+                        for (int k = 0; k < overlay.Picks.Count; k++)
+                            added.Add(StepFromPick(frame, vs, overlay.Picks[k], overlay.Shapes[k], space));
                     }
                 });
             }
@@ -1192,14 +1195,18 @@ namespace AutoClicker
                       (anyWaits ? " Boxes wait until their area looks like it does now (Edit to change)." : ""), ReadyColor);
         }
 
-        /// <summary>A dragged box becomes a step that waits for that area and clicks inside it; a plain click becomes an exact spot.</summary>
+        /// <summary>A dragged box or lasso becomes a step that waits for that area and clicks inside it; a plain click becomes an exact spot.</summary>
         /// <param name="r">Picked area in screen coordinates (0 × 0 for an exact spot).</param>
-        static ClickPoint StepFromPick(Bitmap frame, Rectangle vs, Rectangle r, StepSpace space)
+        /// <param name="shape">Its lasso outline in screen coordinates, or null for a box.</param>
+        static ClickPoint StepFromPick(Bitmap frame, Rectangle vs, Rectangle r, Point[] shape, StepSpace space)
         {
             Rectangle s = space.FromScreen(r);
+            Point o = space.Origin;
             var p = new ClickPoint { X = s.X, Y = s.Y, Width = s.Width, Height = s.Height };
             if (p.IsArea)
             {
+                p.Shape = Lasso.Offset(shape, -o.X, -o.Y);
+                p.WatchShape = p.Shape;
                 p.WatchArea = s;
                 p.Snapshot = Snapshot.FromBitmap(frame, new Rectangle(r.X - vs.X, r.Y - vs.Y, r.Width, r.Height));
                 p.WaitForScreen = p.Snapshot != null;

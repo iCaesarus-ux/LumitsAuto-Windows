@@ -27,12 +27,24 @@ namespace AutoClicker
             Height = height;
             this.rgb = rgb;
             double mean, sd;
-            GrayStats(rgb, Width * Height, out mean, out sd);
-            plain = sd < 6;
+            GrayStats(rgb, Width * Height, null, out mean, out sd);
+            plain = sd < PlainBelow;
         }
+
+        /// <summary>Below this spread of brightness an area counts as plain.</summary>
+        const double PlainBelow = 6;
 
         /// <summary>True for a nearly flat area, where only the colour can be compared.</summary>
         public bool IsPlain { get { return plain; } }
+
+        /// <summary>The same for only the cells <paramref name="mask"/> marks (inside a lasso); null for the whole area.</summary>
+        public bool IsPlainWithin(bool[] mask)
+        {
+            if (mask == null || mask.Length != Width * Height) return plain;
+            double mean, sd;
+            GrayStats(rgb, Width * Height, mask, out mean, out sd);
+            return sd < PlainBelow;
+        }
 
         static Size GridSize(Size area)
         {
@@ -122,13 +134,22 @@ namespace AutoClicker
         /// </summary>
         public double Similarity(Snapshot live)
         {
-            if (live == null || live.Width != Width || live.Height != Height) return 0;
+            return Similarity(live, null);
+        }
 
-            int n = Width * Height;
+        /// <summary>The same, comparing only the cells <paramref name="mask"/> marks (inside a lasso); null compares them all.</summary>
+        public double Similarity(Snapshot live, bool[] mask)
+        {
+            if (live == null || live.Width != Width || live.Height != Height) return 0;
+            if (mask != null && mask.Length != Width * Height) mask = null;
+
+            int n = 0;
             byte[] a = rgb, b = live.rgb;
             double absSum = 0, sumA = 0, sumB = 0, sumAA = 0, sumBB = 0, sumAB = 0;
-            for (int i = 0; i < n; i++)
+            for (int i = 0; i < Width * Height; i++)
             {
+                if (mask != null && !mask[i]) continue;
+                n++;
                 int o = i * 3;
                 absSum += Math.Abs(a[o] - b[o]) + Math.Abs(a[o + 1] - b[o + 1]) + Math.Abs(a[o + 2] - b[o + 2]);
                 double ga = Gray(a, o), gb = Gray(b, o);
@@ -139,11 +160,12 @@ namespace AutoClicker
                 sumAB += ga * gb;
             }
 
+            if (n == 0) return 0;
             double color = Clamp01(1 - absSum / (3.0 * n) / 60.0);
-            if (plain) return color;
-
             double meanA = sumA / n, meanB = sumB / n;
             double sdA = Math.Sqrt(Math.Max(0, sumAA / n - meanA * meanA));
+            if (mask == null ? plain : sdA < PlainBelow) return color;
+
             double sdB = Math.Sqrt(Math.Max(0, sumBB / n - meanB * meanB));
             if (sdB < 3) return 0; // the live area is blank
             double pattern = (sumAB / n - meanA * meanB) / (sdA * sdB);
@@ -153,12 +175,20 @@ namespace AutoClicker
         /// <summary>A small picture of what this snapshot compares, for showing in the editor.</summary>
         public Bitmap ToPreview()
         {
+            return ToPreview(null);
+        }
+
+        /// <summary>The same, with the cells outside <paramref name="mask"/> (outside a lasso) darkened, since they aren't compared.</summary>
+        public Bitmap ToPreview(bool[] mask)
+        {
+            if (mask != null && mask.Length != Width * Height) mask = null;
             var bmp = new Bitmap(Width, Height, PixelFormat.Format24bppRgb);
             for (int y = 0; y < Height; y++)
                 for (int x = 0; x < Width; x++)
                 {
-                    int o = (y * Width + x) * 3;
-                    bmp.SetPixel(x, y, Color.FromArgb(rgb[o], rgb[o + 1], rgb[o + 2]));
+                    int i = y * Width + x, o = i * 3;
+                    int d = mask == null || mask[i] ? 1 : 4;
+                    bmp.SetPixel(x, y, Color.FromArgb(rgb[o] / d, rgb[o + 1] / d, rgb[o + 2] / d));
                 }
             return bmp;
         }
@@ -191,14 +221,22 @@ namespace AutoClicker
             return 0.299 * rgb[o] + 0.587 * rgb[o + 1] + 0.114 * rgb[o + 2];
         }
 
-        static void GrayStats(byte[] rgb, int n, out double mean, out double sd)
+        static void GrayStats(byte[] rgb, int cells, bool[] mask, out double mean, out double sd)
         {
             double sum = 0, sumSq = 0;
-            for (int i = 0; i < n; i++)
+            int n = 0;
+            for (int i = 0; i < cells; i++)
             {
+                if (mask != null && !mask[i]) continue;
                 double g = Gray(rgb, i * 3);
                 sum += g;
                 sumSq += g * g;
+                n++;
+            }
+            if (n == 0)
+            {
+                mean = sd = 0;
+                return;
             }
             mean = sum / n;
             sd = Math.Sqrt(Math.Max(0, sumSq / n - mean * mean));

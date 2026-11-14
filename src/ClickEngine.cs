@@ -482,6 +482,7 @@ namespace AutoClicker
             action.Y = r.Y;
             action.Width = r.Width;
             action.Height = r.Height;
+            action.Shape = null; // a box of its own, not the attack step's lasso
             action.Button = MouseButton.Left;
             action.DoubleClick = false;
             action.BorrowPointer = false;
@@ -1354,7 +1355,7 @@ namespace AutoClicker
                 return false;
             }
             screenFailures = 0;
-            if (p.Snapshot.Similarity(live) * 100 >= p.MatchPercent) return true;
+            if (p.Snapshot.Similarity(live, p.WatchMask()) * 100 >= p.MatchPercent) return true;
             // Your attack button greys out when your Lumit is low on MP (after a few Heat Siphons), so when catching,
             // your turn is also recognised by the menu itself.
             return IsYourTurnStep(p) && YourTurnMenuLit(CurrentFrame());
@@ -1485,6 +1486,7 @@ namespace AutoClicker
 
         Point PickSpot(ClickPoint p)
         {
+            if (p.IsLasso) return SpotInside(p.Shape, p.Area);
             if (p.IsArea) return new Point(Biased(p.X, p.Width), Biased(p.Y, p.Height));
 
             int x = p.X, y = p.Y;
@@ -1494,6 +1496,27 @@ namespace AutoClicker
                 y += rnd.Next(-o.JitterPx, o.JitterPx + 1);
             }
             return new Point(x, y);
+        }
+
+        /// <summary>
+        /// A random spot inside a lasso, usually near the middle of its box like a person aiming, and not on its edge.
+        /// A thin or hollow outline falls back to any spot inside, then to its first point.
+        /// </summary>
+        Point SpotInside(Point[] shape, Rectangle box)
+        {
+            for (int k = 0; k < 300; k++)
+            {
+                Point p = k < 150
+                    ? new Point(Biased(box.X, box.Width), Biased(box.Y, box.Height))
+                    : new Point(box.X + rnd.Next(box.Width), box.Y + rnd.Next(box.Height));
+                if (Lasso.ContainsWithRoom(shape, p, 2)) return p;
+            }
+            for (int k = 0; k < 300; k++)
+            {
+                var p = new Point(box.X + rnd.Next(box.Width), box.Y + rnd.Next(box.Height));
+                if (Lasso.Contains(shape, p.X, p.Y)) return p;
+            }
+            return shape[0];
         }
 
         /// <summary>A random coordinate inside [start, start + size), usually near the middle like a person aiming.</summary>

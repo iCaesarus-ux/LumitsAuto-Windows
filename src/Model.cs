@@ -46,9 +46,51 @@ namespace AutoClicker
         /// </summary>
         public bool BorrowPointer;
 
+        /// <summary>A lassoed click area's outline, in the same coordinates as X and Y; null for a box. X, Y, Width and Height are its bounds.</summary>
+        public Point[] Shape;
+
+        /// <summary>A lassoed watch area's outline: only the snapshot inside it is compared. Null compares all of <see cref="WatchArea"/>.</summary>
+        public Point[] WatchShape;
+
+        // The watch outline's cells in the snapshot grid, kept until the outline, area or snapshot changes.
+        bool[] watchMask;
+        Point[] maskShape;
+        Rectangle maskArea;
+        Snapshot maskSnapshot;
+
         public bool IsArea { get { return Width > 0 && Height > 0; } }
 
         public Rectangle Area { get { return new Rectangle(X, Y, Width, Height); } }
+
+        /// <summary>The click area is a lasso rather than a box.</summary>
+        public bool IsLasso { get { return IsArea && Lasso.IsShape(Shape); } }
+
+        /// <summary>The step watches exactly what it clicks.</summary>
+        public bool WatchesClickArea
+        {
+            get { return IsArea && WatchArea == Area && Lasso.SameShape(WatchShape, IsLasso ? Shape : null); }
+        }
+
+        /// <summary>Which cells of the snapshot to compare: those inside the watch outline. Null compares them all.</summary>
+        public bool[] WatchMask()
+        {
+            if (Snapshot == null || !Lasso.IsShape(WatchShape)) return null;
+            if (!ReferenceEquals(maskShape, WatchShape) || maskArea != WatchArea || !ReferenceEquals(maskSnapshot, Snapshot))
+            {
+                watchMask = Lasso.GridMask(WatchShape, WatchArea, Snapshot.Width, Snapshot.Height);
+                maskShape = WatchShape;
+                maskArea = WatchArea;
+                maskSnapshot = Snapshot;
+            }
+            return watchMask;
+        }
+
+        /// <summary>Moves both outlines with the step.</summary>
+        public void OffsetShapes(int dx, int dy)
+        {
+            Shape = Lasso.Offset(Shape, dx, dy);
+            WatchShape = Lasso.Offset(WatchShape, dx, dy);
+        }
 
         /// <summary>True when the step is set to wait and has everything it needs to do so.</summary>
         public bool Waits
@@ -71,7 +113,9 @@ namespace AutoClicker
                 Num(WatchArea.X), Num(WatchArea.Y), Num(WatchArea.Width), Num(WatchArea.Height),
                 Num(MatchPercent), Num(ReactMinMs), Num(ReactMaxMs), Num(TimeoutSec), OnTimeout.ToString(),
                 Snapshot == null ? "-" : Snapshot.Serialize(),
-                BorrowPointer ? "1" : "0"
+                BorrowPointer ? "1" : "0",
+                Lasso.Serialize(IsLasso ? Shape : null),
+                Lasso.Serialize(WatchShape)
             };
             return string.Join(",", parts);
         }
@@ -105,6 +149,8 @@ namespace AutoClicker
                 p.OnTimeout = onTimeout;
             if (parts.Length > 17) p.Snapshot = Snapshot.Parse(parts[17].Trim());
             p.BorrowPointer = Text(parts, 18) == "1";
+            p.Shape = p.IsArea ? Lasso.Parse(Text(parts, 19)) : null;
+            p.WatchShape = Lasso.Parse(Text(parts, 20));
             return p;
         }
 

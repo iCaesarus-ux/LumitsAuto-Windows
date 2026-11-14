@@ -16,11 +16,16 @@ namespace AutoClicker
         readonly NumericUpDown numX, numY, numW, numH, numDelay, numMatch, numReactMin, numReactMax, numTimeout;
         readonly ComboBox cbButton, cbClick, cbTimeout;
         readonly CheckBox chkDelay, chkWait, chkBorrow;
-        readonly Label lblWatch, lblTest;
+        readonly Label lblWatch, lblTest, lblShape;
+        readonly Button btnBox;
         readonly PictureBox picSnapshot;
         readonly GroupBox grpWait;
         Rectangle watchArea;
+        Point[] watchShape;
         Snapshot snapshot;
+        /// <summary>The click area's lasso as last picked, with the box it was picked in; the numbers can move or stretch it since.</summary>
+        Point[] shape;
+        Rectangle shapeBox;
         ClickPoint result;
 
         public ClickPoint Result { get { return result; } }
@@ -32,7 +37,10 @@ namespace AutoClicker
             this.screenSteps = screenSteps;
             this.space = space;
             watchArea = step.WatchArea;
+            watchShape = step.WatchShape;
             snapshot = step.Snapshot;
+            shape = step.IsLasso ? step.Shape : null;
+            shapeBox = step.Area;
 
             SuspendLayout();
             AutoScaleDimensions = new SizeF(96F, 96F);
@@ -44,11 +52,11 @@ namespace AutoClicker
             MinimizeBox = false;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(440, 526);
+            ClientSize = new Size(440, 558);
             var tips = new ToolTip { AutoPopDelay = 20000, InitialDelay = 400 };
 
             // Where to click
-            var grpClick = new GroupBox { Text = "Where to click", Location = new Point(12, 8), Size = new Size(416, 182) };
+            var grpClick = new GroupBox { Text = "Where to click", Location = new Point(12, 8), Size = new Size(416, 214) };
             Controls.Add(grpClick);
             AddLabel(grpClick, "X:", 14, 27);
             numX = AddNumber(grpClick, 34, 24, 68, -100000, 100000, step.X);
@@ -60,30 +68,38 @@ namespace AutoClicker
             numH = AddNumber(grpClick, 332, 24, 60, 0, 10000, step.Height);
             var sizeHint = new Label
             {
-                Text = "0 × 0 clicks the exact spot. A bigger box clicks a random spot inside it, usually near the middle.",
+                Text = "0 × 0 clicks the exact spot. A bigger box or a lasso clicks a random spot inside it, usually near the middle.",
                 Location = new Point(14, 54),
                 Size = new Size(388, 32),
                 ForeColor = SystemColors.GrayText
             };
             grpClick.Controls.Add(sizeHint);
 
-            AddLabel(grpClick, "Button:", 14, 94);
-            cbButton = AddCombo(grpClick, 68, 91, 86, new object[] { "Left", "Right", "Middle" }, (int)step.Button);
-            AddLabel(grpClick, "Click:", 172, 94);
-            cbClick = AddCombo(grpClick, 214, 91, 86, new object[] { "Single", "Double" }, step.DoubleClick ? 1 : 0);
+            var btnPickClick = AddButton(grpClick, "Pick on screen…", 14, 88, 116, 26, delegate { PickClickArea(); });
+            lblShape = AddLabel(grpClick, "", 138, 94);
+            btnBox = AddButton(grpClick, "Make it a box", 302, 88, 100, 26, delegate { MakeBox(); });
+            tips.SetToolTip(btnPickClick, "Pick this step's click area again: drag a box, press L to draw a lasso around it instead,\n" +
+                                          "or click once for an exact spot. If the step watches its click area, that's picked too,\n" +
+                                          "so get the game to this step's screen first.");
+            tips.SetToolTip(btnBox, "Click anywhere in the lasso's box instead of only inside the lasso.");
 
-            chkDelay = new CheckBox { Text = "Custom delay after:", AutoSize = true, Location = new Point(14, 124), Checked = step.DelayMs >= 0 };
+            AddLabel(grpClick, "Button:", 14, 126);
+            cbButton = AddCombo(grpClick, 68, 123, 86, new object[] { "Left", "Right", "Middle" }, (int)step.Button);
+            AddLabel(grpClick, "Click:", 172, 126);
+            cbClick = AddCombo(grpClick, 214, 123, 86, new object[] { "Single", "Double" }, step.DoubleClick ? 1 : 0);
+
+            chkDelay = new CheckBox { Text = "Custom delay after:", AutoSize = true, Location = new Point(14, 156), Checked = step.DelayMs >= 0 };
             grpClick.Controls.Add(chkDelay);
-            numDelay = AddNumber(grpClick, 160, 122, 80, 0, 3600000, step.DelayMs >= 0 ? step.DelayMs : defaultDelayMs);
+            numDelay = AddNumber(grpClick, 160, 154, 80, 0, 3600000, step.DelayMs >= 0 ? step.DelayMs : defaultDelayMs);
             numDelay.ThousandsSeparator = true;
-            AddLabel(grpClick, "ms", 244, 125);
+            AddLabel(grpClick, "ms", 244, 157);
             tips.SetToolTip(chkDelay, "When unchecked, the main \"Delay between clicks\" is used.");
 
             chkBorrow = new CheckBox
             {
                 Text = "Background mode: use the real pointer for this click",
                 AutoSize = true,
-                Location = new Point(14, 152),
+                Location = new Point(14, 184),
                 Checked = step.BorrowPointer
             };
             grpClick.Controls.Add(chkBorrow);
@@ -93,7 +109,7 @@ namespace AutoClicker
                                        "Buttons such as Attack and Continue don't need it.");
 
             // Wait for the screen
-            grpWait = new GroupBox { Text = "Wait for the screen", Location = new Point(12, 198), Size = new Size(416, 280) };
+            grpWait = new GroupBox { Text = "Wait for the screen", Location = new Point(12, 230), Size = new Size(416, 280) };
             Controls.Add(grpWait);
             chkWait = new CheckBox { Text = "Wait until the game shows this before clicking", AutoSize = true, Location = new Point(14, 24), Checked = step.WaitForScreen };
             grpWait.Controls.Add(chkWait);
@@ -115,7 +131,8 @@ namespace AutoClicker
             var btnPick = AddButton(grpWait, "Pick area…", 302, 76, 100, 26, delegate { PickWatchArea(); });
             var btnRetake = AddButton(grpWait, "Retake snapshot from screen", 196, 110, 206, 26, delegate { RetakeSnapshot(); });
             tips.SetToolTip(btnUseClick, "Watch the same box that gets clicked, and take its snapshot from the screen now.");
-            tips.SetToolTip(btnPick, "Watch a different part of the screen, for example something steadier than the button.");
+            tips.SetToolTip(btnPick, "Watch a different part of the screen, for example something steadier than the button.\n" +
+                                     "Press L there to draw a lasso around it instead of a box.");
             var shotHint = new Label
             {
                 Text = space.Window != null
@@ -148,9 +165,9 @@ namespace AutoClicker
             tips.SetToolTip(cbTimeout, "Keep looking: if any step's screen shows up, the run carries on from there;\n" +
                                        "after 3 of these time-outs with nothing recognisable, it stops (and alerts your phone).");
 
-            var ok = new Button { Text = "OK", Location = new Point(262, 488), Size = new Size(80, 28) };
+            var ok = new Button { Text = "OK", Location = new Point(262, 520), Size = new Size(80, 28) };
             ok.Click += delegate { Commit(); };
-            var cancel = new Button { Text = "Cancel", Location = new Point(348, 488), Size = new Size(80, 28), DialogResult = DialogResult.Cancel };
+            var cancel = new Button { Text = "Cancel", Location = new Point(348, 520), Size = new Size(80, 28), DialogResult = DialogResult.Cancel };
             Controls.Add(ok);
             Controls.Add(cancel);
             AcceptButton = ok;
@@ -158,9 +175,15 @@ namespace AutoClicker
 
             chkDelay.CheckedChanged += delegate { numDelay.Enabled = chkDelay.Checked; };
             chkWait.CheckedChanged += delegate { UpdateWaitEnabled(); };
-            foreach (NumericUpDown n in new[] { numX, numY, numW, numH }) n.ValueChanged += delegate { UpdateWatchLabel(); };
+            foreach (NumericUpDown n in new[] { numX, numY, numW, numH })
+                n.ValueChanged += delegate
+                {
+                    UpdateShapeLabel();
+                    UpdateWatchLabel();
+                };
             numDelay.Enabled = chkDelay.Checked;
             UpdateWaitEnabled();
+            UpdateShapeLabel();
             UpdateWatchLabel();
             UpdateSnapshotView();
 
@@ -173,6 +196,33 @@ namespace AutoClicker
             int x = (int)numX.Value, y = (int)numY.Value, w = (int)numW.Value, h = (int)numH.Value;
             if (w > 0 && h > 0) return new Rectangle(x, y, w, h);
             return new Rectangle(x - 18, y - 18, 36, 36); // an exact spot: watch a small square around it
+        }
+
+        /// <summary>The click area's lasso, fitted to the box the numbers give now; null for a box or an exact spot.</summary>
+        Point[] CurrentShape()
+        {
+            if (shape == null || numW.Value <= 0 || numH.Value <= 0) return null;
+            return Lasso.Fit(shape, shapeBox, ClickArea());
+        }
+
+        bool WatchesClickArea()
+        {
+            return watchArea == ClickArea() && Lasso.SameShape(watchShape, CurrentShape());
+        }
+
+        /// <summary>Which cells of the snapshot are compared: those inside the watch lasso, or all of them.</summary>
+        bool[] Mask()
+        {
+            return snapshot == null ? null : Lasso.GridMask(watchShape, watchArea, snapshot.Width, snapshot.Height);
+        }
+
+        void UpdateShapeLabel()
+        {
+            Point[] now = CurrentShape();
+            lblShape.Text = now != null ? "A lasso (" + now.Length + " points)"
+                          : numW.Value > 0 && numH.Value > 0 ? "A box"
+                          : "An exact spot";
+            btnBox.Enabled = now != null;
         }
 
         void UpdateWaitEnabled()
@@ -189,15 +239,17 @@ namespace AutoClicker
                 return;
             }
             lblWatch.Text = watchArea.X + ", " + watchArea.Y + "   " + watchArea.Width + " × " + watchArea.Height +
-                            (watchArea == ClickArea() ? "   (the click area)" : "   (a separate area)");
+                            (watchShape != null ? " lasso" : "") +
+                            (WatchesClickArea() ? "   (the click area)" : "   (a separate area)");
         }
 
         void UpdateSnapshotView()
         {
             Image old = picSnapshot.Image;
-            picSnapshot.Image = snapshot == null ? null : snapshot.ToPreview();
+            bool[] mask = Mask();
+            picSnapshot.Image = snapshot == null ? null : snapshot.ToPreview(mask);
             if (old != null) old.Dispose();
-            if (snapshot != null && snapshot.IsPlain)
+            if (snapshot != null && snapshot.IsPlainWithin(mask))
                 ShowTest("Plain area: only its colour is compared", BadColor);
         }
 
@@ -215,7 +267,92 @@ namespace AutoClicker
         void UseClickArea()
         {
             watchArea = ClickArea();
+            watchShape = CurrentShape();
             RetakeSnapshot();
+        }
+
+        /// <summary>
+        /// Picks the click area again: a box, a lasso or an exact spot. A step that watched its click area watches the
+        /// new one, with its snapshot taken from the same picture of the screen.
+        /// </summary>
+        void PickClickArea()
+        {
+            bool watchedClickArea = watchArea.Width > 0 && watchArea.Height > 0 && WatchesClickArea();
+            Rectangle vs = SystemInformation.VirtualScreen;
+            Rectangle picked = Rectangle.Empty;
+            Point[] pickedShape = null;
+            Snapshot shot = null;
+            bool got = false;
+            try
+            {
+                ScreenGrab.WhileHidden(WindowsToHide(), delegate
+                {
+                    using (Bitmap frame = ScreenGrab.CaptureVirtualScreen())
+                    using (var overlay = new PickOverlay(frame, vs, screenSteps, true, true, true))
+                    {
+                        overlay.ShowDialog();
+                        if (overlay.Picks.Count == 0) return;
+                        picked = overlay.Picks[0];
+                        pickedShape = overlay.Shapes[0];
+                        got = true;
+                        // An exact spot watches a small square around it, as ClickArea gives.
+                        Rectangle watched = picked.Width > 0 ? picked : new Rectangle(picked.X - 18, picked.Y - 18, 36, 36);
+                        shot = Snapshot.FromBitmap(frame, new Rectangle(watched.X - vs.X, watched.Y - vs.Y, watched.Width, watched.Height));
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Couldn't capture the screen:\n" + ex.Message, "Auto Clicker", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            if (!got) return;
+
+            Rectangle s = space.FromScreen(picked);
+            Point o = space.Origin;
+            shape = Lasso.Offset(pickedShape, -o.X, -o.Y);
+            shapeBox = s;
+            SetNumber(numX, s.X);
+            SetNumber(numY, s.Y);
+            SetNumber(numW, s.Width);
+            SetNumber(numH, s.Height);
+            UpdateShapeLabel();
+
+            if (watchedClickArea)
+            {
+                if (shot != null)
+                {
+                    watchArea = ClickArea();
+                    watchShape = CurrentShape();
+                    snapshot = shot;
+                    ShowTest("Snapshot taken from the screen you picked on", GoodColor);
+                    UpdateSnapshotView();
+                }
+                else
+                {
+                    ShowTest("Couldn't take a snapshot there: use Retake", BadColor);
+                }
+            }
+            UpdateWatchLabel();
+        }
+
+        /// <summary>Back to clicking anywhere in the lasso's box; a watch lasso that was the click area goes too.</summary>
+        void MakeBox()
+        {
+            bool watchedClickArea = watchArea.Width > 0 && watchArea.Height > 0 && WatchesClickArea();
+            shape = null;
+            if (watchedClickArea)
+            {
+                watchShape = null;
+                UpdateSnapshotView();
+            }
+            UpdateShapeLabel();
+            UpdateWatchLabel();
+        }
+
+        static void SetNumber(NumericUpDown n, int value)
+        {
+            n.Value = Math.Max(n.Minimum, Math.Min(n.Maximum, value));
         }
 
         /// <summary>Reads an area as it is now, hiding these windows first unless it comes straight from the game window.</summary>
@@ -246,17 +383,19 @@ namespace AutoClicker
         {
             Rectangle vs = SystemInformation.VirtualScreen;
             Rectangle picked = Rectangle.Empty;
+            Point[] pickedShape = null;
             Snapshot shot = null;
             try
             {
                 ScreenGrab.WhileHidden(WindowsToHide(), delegate
                 {
                     using (Bitmap frame = ScreenGrab.CaptureVirtualScreen())
-                    using (var overlay = new PickOverlay(frame, vs, screenSteps, true))
+                    using (var overlay = new PickOverlay(frame, vs, screenSteps, true, true, false))
                     {
                         overlay.ShowDialog();
                         if (overlay.Picks.Count == 0) return;
                         picked = overlay.Picks[0];
+                        pickedShape = overlay.Shapes[0];
                         shot = Snapshot.FromBitmap(frame, new Rectangle(picked.X - vs.X, picked.Y - vs.Y, picked.Width, picked.Height));
                     }
                 });
@@ -269,6 +408,8 @@ namespace AutoClicker
             if (shot == null) return;
 
             watchArea = space.FromScreen(picked);
+            Point o = space.Origin;
+            watchShape = Lasso.Offset(pickedShape, -o.X, -o.Y);
             snapshot = shot;
             chkWait.Checked = true;
             ShowTest("", GoodColor);
@@ -284,7 +425,7 @@ namespace AutoClicker
                 return;
             }
             Snapshot live = ReadNow(watchArea);
-            double score = snapshot.Similarity(live) * 100;
+            double score = snapshot.Similarity(live, Mask()) * 100;
             bool ok = score >= (double)numMatch.Value;
             ShowTest("Now " + Math.Round(score) + "% — " + (ok ? "matches" : "doesn't match"), ok ? GoodColor : BadColor);
         }
@@ -317,7 +458,9 @@ namespace AutoClicker
                 ReactMaxMs = reactMax,
                 TimeoutSec = (int)numTimeout.Value,
                 OnTimeout = (TimeoutAction)cbTimeout.SelectedIndex,
-                BorrowPointer = chkBorrow.Checked
+                BorrowPointer = chkBorrow.Checked,
+                Shape = CurrentShape(),
+                WatchShape = watchArea.Width > 0 && watchArea.Height > 0 ? watchShape : null
             };
             if (result.Width == 0 || result.Height == 0) result.Width = result.Height = 0;
             DialogResult = DialogResult.OK;

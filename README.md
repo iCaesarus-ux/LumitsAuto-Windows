@@ -23,6 +23,11 @@ Each box you drag becomes a step that:
 A plain click in the picker (no drag) adds an exact-spot step that doesn't wait. **F7** does the same
 from any window.
 
+**Lasso:** in the picker, press **L** to draw around something instead of dragging a box, for things
+that aren't box-shaped. Hold the button down while you draw; letting go closes the outline. The step
+then clicks only inside the outline and, while waiting, compares only what's inside it. **L** again
+goes back to boxes. The next picker starts the way you left this one.
+
 **Starting mid-loop:** when you press Start, the app first checks which step's screen is showing
 and begins there. Start on the Victory screen and it clicks Continue first; start mid-fight and it
 attacks first.
@@ -207,9 +212,14 @@ glide, press and release straight to it as window messages. Your real pointer ne
 ## Editing a step
 
 Double-click a step to:
-- change the box, button (left/right/middle) and single/double click;
-- watch a **different area** than the one clicked (**Pick area…**). This helps when the button
-  itself animates. Small, steady things like a button's text work best;
+- pick its click area again with **Pick on screen…**: drag a box, press **L** for a lasso, or click once
+  for an exact spot. If the step watches its click area, that's picked again too, with its snapshot
+  taken from the same screen, so get the game to that step's screen first;
+- change the box with its numbers (they move and stretch a lasso too), or turn a lasso back into its
+  box with **Make it a box**;
+- change the button (left/right/middle) and single/double click;
+- watch a **different area** than the one clicked (**Pick area…**, where **L** draws a lasso too). This
+  helps when the button itself animates. Small, steady things like a button's text work best;
 - **Test now**: shows how closely the screen matches right now (e.g. "Now 97% — matches");
 - set **Match needed** (default 80%). Lower it if a step never fires. Raise it if it fires too early,
   e.g. while a button is still fading in;
