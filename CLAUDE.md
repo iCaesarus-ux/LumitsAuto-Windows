@@ -35,4 +35,17 @@ says how it's used. Split from LumitsAuto, which also holds the Android app (not
   in 1v1 pictures the lead's spot catches the 1v1 card's red frame and the lower wild spot a red radiant's portrait.
   A radiant in a 2v2 stops the run untouched, naming which one (`CatchOptions.CatchDuoRadiants`, off): 2v2 target
   clicks and the second Lumit's moves haven't been checked on the PC. Pictures: `tests/pictures/pc/duo-*.png`.
+- **Night (14 November, measured in the owner's game with `PrintWindow`, no input):** the game multiplies its
+  world's colours at night (no offset), not its interface: fitted pixel by pixel on the same standing stone (red
+  0.40, green 0.55, blue 0.79) and rock (0.38, 0.49, 0.73) on `tests/pictures/pc/map-day.png` and `map-night.png`.
+  `Snapshot.Similarity` also tries the snapshot (or the live area, for one taken at night) through that tint at 0.1
+  to 1.3 of its strength, for dusk and dawn, but only when the area's light changed like the night's
+  (`Snapshot.LightChange`): at least 15% darker or lighter, and blue kept over red against red lost between 0.35
+  and 1 (the tint gives 0.65 at any strength, the stone and rock 0.61 to 0.66, dimmed buttons -0.43 to -0.04).
+  Without that, dimmed buttons look much the same darkened by the tint (a lit Strike label scored 76% against a
+  dimmed one through it, 41% as taken). Real pairs went from 11 to 25% to 90%; every dimmed button scores as before.
+  Dusk and dawn are assumed to lie on the way to the night's tint; not seen yet.
 - The owner's saved settings had the radiant check off (`alert=0`) on 14 November.
+- **Settings not saving (not solved):** `%APPDATA%\AutoClicker\settings.txt` was last written on 30 October, in an
+  older format (no `catchRadiants`), while `lumits.txt` beside it was written during a run on 14 November. Saving is
+  `SaveSettingsQuietly`, which swallows any error. Loading a copy and saving it elsewhere with the same code worked.

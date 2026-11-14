@@ -425,9 +425,12 @@ namespace AutoClicker
                 return;
             }
             Snapshot live = ReadNow(watchArea);
-            double score = snapshot.Similarity(live, Mask()) * 100;
+            double night;
+            double score = snapshot.Similarity(live, Mask(), out night) * 100;
             bool ok = score >= (double)numMatch.Value;
-            ShowTest("Now " + Math.Round(score) + "% — " + (ok ? "matches" : "doesn't match"), ok ? GoodColor : BadColor);
+            // The game's night darkens its world; a snapshot taken by day is compared as the night would show it.
+            string light = night > 0 ? "\nin the night's light" : night < 0 ? "\ntaken at night, lighter now" : "";
+            ShowTest("Now " + Math.Round(score) + "% — " + (ok ? "matches" : "doesn't match") + light, ok ? GoodColor : BadColor);
         }
 
         void Commit()

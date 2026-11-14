@@ -140,9 +140,107 @@ namespace AutoClicker
         /// <summary>The same, comparing only the cells <paramref name="mask"/> marks (inside a lasso); null compares them all.</summary>
         public double Similarity(Snapshot live, bool[] mask)
         {
+            double night;
+            return Similarity(live, mask, out night);
+        }
+
+        /// <summary>
+        /// What the game's night does to its world (the map, a fight's field and Lumits, the names over them), but not to
+        /// its buttons, cards or minimap: each colour multiplied, with no offset. Measured on 14 November 2026 on the same
+        /// sprites by day and by night: a standing stone (red 0.40, green 0.55, blue 0.79) and a rock (0.38, 0.49, 0.73).
+        /// </summary>
+        static readonly double[] NightTint = { 0.40, 0.52, 0.79 };
+        /// <summary>
+        /// The night is tried this far along, in steps of a tenth: dusk and dawn as part of the way, and a little past it in
+        /// case the night darkens more than when it was measured.
+        /// </summary>
+        const int NightSteps = 13;
+
+        /// <summary>
+        /// The same, also as the night's light would change things, so a picture taken by day matches at night and one taken
+        /// at night matches by day. <paramref name="night"/> says which matched best: 0 as taken; above 0, darker now than
+        /// when taken (1 is the night as measured); below 0, lighter now (taken at night).
+        /// </summary>
+        public double Similarity(Snapshot live, bool[] mask, out double night)
+        {
+            night = 0;
             if (live == null || live.Width != Width || live.Height != Height) return 0;
             if (mask != null && mask.Length != Width * Height) mask = null;
+            // Whether it's plain is judged as it was taken, whatever light it's compared in.
+            bool flat = mask == null ? plain : IsPlainWithin(mask);
+            double asTaken = Compare(live, mask, flat, null, null);
+            if (asTaken >= 0.995) return asTaken;
+            // Only a change of light like the night's is tried: buttons dimmed as the game animates go darker evenly, and
+            // dark grey parts look much the same darkened either way (a lit Strike label scored 76% against a dimmed one
+            // through the night's tint, and 41% as taken).
+            double darker, nightLike;
+            LightChange(live, mask, out darker, out nightLike);
+            if (Math.Abs(darker) < NightFrom || nightLike < NightLikeFrom || nightLike > NightLikeTo) return asTaken;
+            double atNight = 0, nightAt = 0;
+            var tint = new double[3];
+            for (int step = 1; step <= NightSteps; step++)
+            {
+                double t = step / 10.0;
+                for (int c = 0; c < 3; c++) tint[c] = 1 - t * (1 - NightTint[c]);
+                // Darker now: taken by day, so this snapshot as the night would show it. Lighter now: taken at night, so the
+                // live area as the night would show it.
+                double now = darker > 0 ? Compare(live, mask, flat, tint, null) : Compare(live, mask, flat, null, tint);
+                if (now > atNight)
+                {
+                    atNight = now;
+                    nightAt = darker > 0 ? t : -t;
+                }
+            }
+            if (atNight <= asTaken) return asTaken;
+            night = nightAt;
+            return atNight;
+        }
 
+        /// <summary>The light has to have changed by at least this much (red's gain, 1 minus it) for the night to be tried.</summary>
+        const double NightFrom = 0.15;
+        /// <summary>
+        /// How night-like a change of light has to be: blue kept over red, against red lost. The night's tint gives 0.65 at
+        /// any strength (0.61 to 0.66 on the stone and the rock); dimmed buttons gave -0.43 to -0.04.
+        /// </summary>
+        const double NightLikeFrom = 0.35, NightLikeTo = 1;
+
+        /// <summary>
+        /// How the light changed from this snapshot to <paramref name="live"/>, from each colour's least-squares gain:
+        /// <paramref name="darker"/> is 1 minus red's gain, above 0 when darker now, below 0 when lighter (the gains then
+        /// taken the other way); <paramref name="nightLike"/> is how much more blue than red was kept, against the red lost.
+        /// </summary>
+        void LightChange(Snapshot live, bool[] mask, out double darker, out double nightLike)
+        {
+            var mineMine = new double[3];
+            var mineTheirs = new double[3];
+            var theirsTheirs = new double[3];
+            for (int i = 0; i < Width * Height; i++)
+            {
+                if (mask != null && !mask[i]) continue;
+                for (int c = 0; c < 3; c++)
+                {
+                    double a = rgb[i * 3 + c], b = live.rgb[i * 3 + c];
+                    mineMine[c] += a * a;
+                    mineTheirs[c] += a * b;
+                    theirsTheirs[c] += b * b;
+                }
+            }
+            var gain = new double[3];
+            for (int c = 0; c < 3; c++) gain[c] = mineMine[c] > 0 ? mineTheirs[c] / mineMine[c] : 1;
+            bool lighter = gain[0] > 1;
+            if (lighter)
+                for (int c = 0; c < 3; c++) gain[c] = theirsTheirs[c] > 0 ? mineTheirs[c] / theirsTheirs[c] : 1;
+            double lost = 1 - gain[0];
+            darker = lighter ? -lost : lost;
+            nightLike = lost > 1e-6 ? (gain[2] - gain[0]) / lost : 0;
+        }
+
+        /// <summary>
+        /// Pattern times colour, with this snapshot's colours multiplied by <paramref name="mine"/> and the live one's by
+        /// <paramref name="theirs"/> (null: as they are). <paramref name="flat"/>: only the colour counts.
+        /// </summary>
+        double Compare(Snapshot live, bool[] mask, bool flat, double[] mine, double[] theirs)
+        {
             int n = 0;
             byte[] a = rgb, b = live.rgb;
             double absSum = 0, sumA = 0, sumB = 0, sumAA = 0, sumBB = 0, sumAB = 0;
@@ -151,8 +249,21 @@ namespace AutoClicker
                 if (mask != null && !mask[i]) continue;
                 n++;
                 int o = i * 3;
-                absSum += Math.Abs(a[o] - b[o]) + Math.Abs(a[o + 1] - b[o + 1]) + Math.Abs(a[o + 2] - b[o + 2]);
-                double ga = Gray(a, o), gb = Gray(b, o);
+                double ar = a[o], ag = a[o + 1], ab = a[o + 2], br = b[o], bg = b[o + 1], bb = b[o + 2];
+                if (mine != null)
+                {
+                    ar *= mine[0];
+                    ag *= mine[1];
+                    ab *= mine[2];
+                }
+                if (theirs != null)
+                {
+                    br *= theirs[0];
+                    bg *= theirs[1];
+                    bb *= theirs[2];
+                }
+                absSum += Math.Abs(ar - br) + Math.Abs(ag - bg) + Math.Abs(ab - bb);
+                double ga = 0.299 * ar + 0.587 * ag + 0.114 * ab, gb = 0.299 * br + 0.587 * bg + 0.114 * bb;
                 sumA += ga;
                 sumB += gb;
                 sumAA += ga * ga;
@@ -162,12 +273,11 @@ namespace AutoClicker
 
             if (n == 0) return 0;
             double color = Clamp01(1 - absSum / (3.0 * n) / 60.0);
+            if (flat) return color;
             double meanA = sumA / n, meanB = sumB / n;
             double sdA = Math.Sqrt(Math.Max(0, sumAA / n - meanA * meanA));
-            if (mask == null ? plain : sdA < PlainBelow) return color;
-
             double sdB = Math.Sqrt(Math.Max(0, sumBB / n - meanB * meanB));
-            if (sdB < 3) return 0; // the live area is blank
+            if (sdB < 3 || sdA < 1e-6) return 0; // the live area is blank
             double pattern = (sumAB / n - meanA * meanB) / (sdA * sdB);
             return Clamp01(pattern) * color;
         }

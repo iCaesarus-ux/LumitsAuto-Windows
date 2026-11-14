@@ -16,9 +16,17 @@ Do this once per screen, while the game is showing that screen:
 4. Press **F6** (or **Start**). Press **F6** again to stop.
 
 Each box you drag becomes a step that:
-- **waits** until that area looks like it did when you picked it,
+- **waits** until that area looks like it did when you picked it, by day or by night,
 - waits a **reaction delay** (300–900 ms by default; short waits are more common than long ones),
 - glides the mouse there and clicks a **random spot inside the box**, usually near the middle.
+
+**Day and night:** the game's night darkens its world (the map, a fight's field, the Lumits and the names
+over them), not its buttons, cards or minimap. It multiplies each colour: red by about 0.40, green 0.52 and
+blue 0.79 (measured on 14 November 2026 on the same stone and rock by day and by night). So a step's
+picture is also compared as the night would show it, and part of the way there for dusk and dawn, whether it
+was picked by day or at night: one picture works for both. That's only tried when the area has changed the
+way the night changes things, keeping much more of its blue than its red; a button dimmed while the game
+animates goes darker evenly, so buttons score as they always did.
 
 A plain click in the picker (no drag) adds an exact-spot step that doesn't wait. **F7** does the same
 from any window.
@@ -253,7 +261,8 @@ Double-click a step to:
 - change the button (left/right/middle) and single/double click;
 - watch a **different area** than the one clicked (**Pick area…**, where **L** draws a lasso too). This
   helps when the button itself animates. Small, steady things like a button's text work best;
-- **Test now**: shows how closely the screen matches right now (e.g. "Now 97% — matches");
+- **Test now**: shows how closely the screen matches right now (e.g. "Now 97% — matches"), and says so
+  when it matched in the night's light (or, for a picture taken at night, lighter now);
 - set **Match needed** (default 80%). Lower it if a step never fires. Raise it if it fires too early,
   e.g. while a button is still fading in;
 - set the **reaction delay** range and what happens if the screen **doesn't appear in time**:

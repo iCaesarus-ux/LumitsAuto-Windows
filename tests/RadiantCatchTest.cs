@@ -536,6 +536,129 @@ namespace AutoClicker
             }
         }
 
+        /// <summary>A copy of part of a picture with its colours multiplied, as the game's night (or an even dimming) does.</summary>
+        static Bitmap Tinted(Bitmap source, Rectangle part, double r, double g, double b)
+        {
+            Bitmap t = source.Clone(part, PixelFormat.Format32bppArgb);
+            for (int y = 0; y < t.Height; y++)
+                for (int x = 0; x < t.Width; x++)
+                {
+                    Color c = t.GetPixel(x, y);
+                    t.SetPixel(x, y, Color.FromArgb((int)Math.Round(c.R * r), (int)Math.Round(c.G * g), (int)Math.Round(c.B * b)));
+                }
+            return t;
+        }
+
+        /// <summary>The same sprite in a picture by day and one by night: each snapshot must match the other.</summary>
+        static void DayAndNight(Bitmap day, Rectangle d, Bitmap night, Rectangle n, string what)
+        {
+            Snapshot byDay = Snapshot.FromBitmap(day, d), byNight = Snapshot.FromBitmap(night, n);
+            double darker, lighter;
+            double atNight = byDay.Similarity(byNight, null, out darker), byDayNow = byNight.Similarity(byDay, null, out lighter);
+            Console.WriteLine(string.Format("      {0}: taken by day, now night {1:0}% (night {2:0.0}); taken at night, now day {3:0}% ({4:0.0})",
+                what, atNight * 100, darker, byDayNow * 100, lighter));
+            Check(atNight >= 0.85 && darker >= 0.7, what + ": a snapshot taken by day matches at night");
+            Check(byDayNow >= 0.85 && lighter <= -0.7, what + ": a snapshot taken at night matches by day");
+        }
+
+        /// <summary>
+        /// The game's night multiplies its world's colours (not its buttons'). A step's snapshot must match by day and by
+        /// night whichever it was taken in, while buttons dimmed as the game animates must score as they always did.
+        /// </summary>
+        static void NightLight(string dir)
+        {
+            Console.WriteLine("\n== Steps' snapshots by day and by night");
+            Bitmap day = Load(dir, "map-day.png"), night = Load(dir, "map-night.png");
+            if (day == null || night == null)
+            {
+                Check(false, "map-day.png and map-night.png must be beside radiant.jpg");
+                return;
+            }
+            using (day)
+            using (night)
+            {
+                // The same sprites on the two maps, by day and by night.
+                DayAndNight(day, new Rectangle(266, 122, 44, 60), night, new Rectangle(1016, 198, 44, 60), "The standing stone");
+                DayAndNight(day, new Rectangle(592, 480, 34, 30), night, new Rectangle(1342, 556, 34, 30), "The small rock");
+
+                // Other things at night aren't the stone or the rock taken by day, nor the map's other spot.
+                Snapshot stone = Snapshot.FromBitmap(day, new Rectangle(266, 122, 44, 60)), rock = Snapshot.FromBitmap(day, new Rectangle(592, 480, 34, 30));
+                var others = new List<string>();
+                double worst = 0;
+                foreach (Point p in new[] { new Point(480, 250), new Point(1330, 545), new Point(700, 150), new Point(940, 500) })
+                {
+                    double s = stone.Similarity(Snapshot.FromBitmap(night, new Rectangle(p, new Size(44, 60))));
+                    worst = Math.Max(worst, s);
+                    others.Add(Math.Round(s * 100) + "%");
+                }
+                foreach (Point p in new[] { new Point(1020, 220), new Point(330, 480) })
+                {
+                    double s = rock.Similarity(Snapshot.FromBitmap(night, new Rectangle(p, new Size(34, 30))));
+                    worst = Math.Max(worst, s);
+                    others.Add(Math.Round(s * 100) + "%");
+                }
+                var spot = new Rectangle(919, 490, 106, 71);
+                double elsewhere = Snapshot.FromBitmap(day, spot).Similarity(Snapshot.FromBitmap(night, spot));
+                worst = Math.Max(worst, elsewhere);
+                others.Add(Math.Round(elsewhere * 100) + "%");
+                Check(worst < 0.4, "Other things at night don't match the stone, the rock or another spot taken by day: " + string.Join(", ", others));
+
+                // Dusk and dawn taken as part of the way to the night, and a little past it, on a spot by a tree.
+                var tree = new Rectangle(880, 420, 120, 90);
+                Snapshot taken = Snapshot.FromBitmap(day, tree);
+                var dusk = new List<string>();
+                bool allMatch = true;
+                foreach (double t in new[] { 0.3, 0.5, 0.7, 1.0, 1.2 })
+                {
+                    using (Bitmap dark = Tinted(day, tree, 1 - t * 0.60, 1 - t * 0.48, 1 - t * 0.21))
+                    {
+                        Snapshot now = Snapshot.FromBitmap(dark, new Rectangle(Point.Empty, dark.Size));
+                        double darker, lighter;
+                        double a = taken.Similarity(now, null, out darker), b = now.Similarity(taken, null, out lighter);
+                        dusk.Add(t.ToString("0.0") + ": " + Math.Round(a * 100) + "%/" + Math.Round(b * 100) + "%");
+                        if (a < 0.85 || b < 0.85) allMatch = false;
+                    }
+                }
+                Check(allMatch, "Part of the way to the night and a little past it, both ways: " + string.Join(", ", dusk));
+
+                // An even darkening, as when the screen fades, isn't the night.
+                using (Bitmap faded = Tinted(day, tree, 0.5, 0.5, 0.5))
+                {
+                    double darker;
+                    double s = taken.Similarity(Snapshot.FromBitmap(faded, new Rectangle(Point.Empty, faded.Size)), null, out darker);
+                    Check(darker == 0, "Evenly darkened to half isn't taken for the night (" + Math.Round(s * 100) + "% as taken)");
+                }
+            }
+
+            // Buttons dimmed while the game animates: scored as taken, never as the night. Lit is from radiant.jpg.
+            Bitmap lit = Load(dir, "radiant.jpg");
+            if (lit == null) return;
+            using (lit)
+            {
+                string[][] dims =
+                {
+                    new[] { "Run", "212", "912", "54", "55", "duo-turn-bonwing.png" },
+                    new[] { "Run", "212", "912", "54", "55", "duo-target-lithorse.png" },
+                    new[] { "Strike", "528", "876", "120", "26", "duo-turn-bonwing.png" },
+                    new[] { "Pyrecrest Assault", "884", "876", "120", "26", "duo-turn-bonwing.png" },
+                    new[] { "Heat Siphon", "1240", "876", "120", "26", "duo-target-lithorse.png" },
+                    new[] { "Capture", "1400", "806", "120", "30", "duo-target-lithorse.png" },
+                };
+                foreach (string[] d in dims)
+                {
+                    Bitmap dim = Load(dir, d[5]);
+                    if (dim == null) continue;
+                    using (dim)
+                    {
+                        var r = new Rectangle(int.Parse(d[1]), int.Parse(d[2]), int.Parse(d[3]), int.Parse(d[4]));
+                        double darker;
+                        double s = Snapshot.FromBitmap(lit, r).Similarity(Snapshot.FromBitmap(dim, r), null, out darker);
+                        Check(darker == 0, d[0] + " lit against dimmed (" + d[5] + "): " + Math.Round(s * 100) + "%, as taken, not as the night");
+                    }
+                }
+            }
+        }
+
         static void Simulate()
         {
             Console.WriteLine("\n== Many fights through the decision itself, with damage varying per hit and 15% crits");
@@ -684,6 +807,7 @@ namespace AutoClicker
 
                 string dir = Path.GetDirectoryName(Path.GetFullPath(args[0]));
                 DuoSpots(dir);
+                NightLight(dir);
 
                 Console.WriteLine("\n== A PC 2v2 (Bonwing and Musingens), radiants only");
                 Bitmap bonwing = Load(dir, "duo-turn-bonwing.png");
