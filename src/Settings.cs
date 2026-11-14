@@ -112,6 +112,25 @@ namespace AutoClicker
 
         public void Save(string path) { WriteTo(path, true); }
 
+        /// <summary>
+        /// Writes down why saving the settings at <paramref name="path"/> failed, in save-error.txt beside them, with the
+        /// time. Returns that file, or null if it couldn't be written either.
+        /// </summary>
+        public static string NoteSaveProblem(string path, Exception problem)
+        {
+            try
+            {
+                string file = Path.Combine(Path.GetDirectoryName(path), "save-error.txt");
+                File.AppendAllText(file, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "  saving " + path +
+                                         Environment.NewLine + problem + Environment.NewLine + Environment.NewLine);
+                return file;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
         public void SaveProfile(string path) { WriteTo(path, false); }
 
         public void LoadProfile(string path) { ReadFrom(path, false); }

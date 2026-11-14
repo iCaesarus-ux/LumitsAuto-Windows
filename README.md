@@ -279,7 +279,8 @@ Double-click a step to:
 - **Redo a step if its screen comes back**: if an enemy survives and the attack buttons light up
   again while it's waiting for Continue, it attacks again.
 - **Save… / Load…** store the steps and settings in a `.clicklist` file. Everything is also
-  remembered automatically in `%APPDATA%\AutoClicker\settings.txt`.
+  remembered automatically in `%APPDATA%\AutoClicker\settings.txt`. If that can't be saved, the title
+  bar says "settings not saved", the status line says why, and `save-error.txt` beside it has the details.
 
 ## Notes
 

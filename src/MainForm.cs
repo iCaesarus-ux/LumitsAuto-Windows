@@ -71,7 +71,7 @@ namespace AutoClicker
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             Font = new Font("Segoe UI", 9F);
-            Text = "Auto Clicker";
+            Text = AppTitle;
             Icon = LoadAppIcon();
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -410,11 +410,27 @@ namespace AutoClicker
             return Math.Max(n.Minimum, Math.Min(n.Maximum, value));
         }
 
-        void SaveSettingsQuietly()
+        /// <summary>
+        /// Saves the settings. A failed save would lose your steps and choices at the next start without a word (on
+        /// 14 November the owner's settings.txt was last written on 30 October), so it's shown in the title bar and the
+        /// status line, and written down beside the settings in save-error.txt.
+        /// </summary>
+        void SaveSettings()
         {
-            try { settings.Save(AppSettings.DefaultPath); }
-            catch (Exception) { }
+            try
+            {
+                settings.Save(AppSettings.DefaultPath);
+                if (Text != AppTitle) Text = AppTitle;
+            }
+            catch (Exception ex)
+            {
+                string file = AppSettings.NoteSaveProblem(AppSettings.DefaultPath, ex);
+                Text = AppTitle + " — settings not saved";
+                SetStatus("Settings couldn't be saved: " + ex.Message + (file != null ? " Details in " + file + "." : ""), WarningColor);
+            }
         }
+
+        const string AppTitle = "Auto Clicker";
 
         void UpdateEnabledStates()
         {
@@ -569,7 +585,7 @@ namespace AutoClicker
             finally { modalOpen = false; }
             UpdateAlertLabel();
             UpdateCounterLabel();
-            SaveSettingsQuietly();
+            SaveSettings();
         }
 
         void OnRadiantFound(RunResult result)
@@ -655,7 +671,7 @@ namespace AutoClicker
                         settings.Areas.Add(name);
                     }
                     settings.Area = name;
-                    SaveSettingsQuietly();
+                    SaveSettings();
                 }
                 FillAreas();
                 SwitchCounter();
@@ -663,7 +679,7 @@ namespace AutoClicker
             }
             if (picked == settings.Area) return;
             settings.Area = picked;
-            SaveSettingsQuietly();
+            SaveSettings();
             SwitchCounter();
         }
 
@@ -723,7 +739,7 @@ namespace AutoClicker
             }
             finally { modalOpen = false; }
             UpdateCounterLabel();
-            SaveSettingsQuietly();
+            SaveSettings();
         }
 
         /// <summary>Sends to the ntfy topic / Discord webhook in the background and notes the outcome in the status line.</summary>
@@ -963,7 +979,7 @@ namespace AutoClicker
             }
 
             ReadControlsIntoSettings();
-            SaveSettingsQuietly();
+            SaveSettings();
             var options = new RunOptions
             {
                 Hid = hid,
@@ -1105,7 +1121,7 @@ namespace AutoClicker
         {
             engine.StopAndWait(1000);
             ReadControlsIntoSettings();
-            SaveSettingsQuietly();
+            SaveSettings();
             HidMouse.Disconnect();
             base.OnFormClosing(e);
         }

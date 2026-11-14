@@ -47,5 +47,7 @@ says how it's used. Split from LumitsAuto, which also holds the Android app (not
   Dusk and dawn are assumed to lie on the way to the night's tint; not seen yet.
 - The owner's saved settings had the radiant check off (`alert=0`) on 14 November.
 - **Settings not saving (not solved):** `%APPDATA%\AutoClicker\settings.txt` was last written on 30 October, in an
-  older format (no `catchRadiants`), while `lumits.txt` beside it was written during a run on 14 November. Saving is
-  `SaveSettingsQuietly`, which swallows any error. Loading a copy and saving it elsewhere with the same code worked.
+  older format (no `catchRadiants`), while `lumits.txt` beside it was written during a run on 14 November. Saving
+  swallowed any error then. Loading a copy and saving it elsewhere with the same code worked. Now `MainForm.SaveSettings`
+  shows a failure (title "Auto Clicker — settings not saved", and the status line) and `AppSettings.NoteSaveProblem`
+  appends it with its stack trace to `save-error.txt` beside the settings: read that file once the owner runs this.
