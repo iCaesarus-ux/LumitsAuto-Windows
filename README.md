@@ -56,7 +56,8 @@ with the reason and a screenshot. To check for radiants, tick *Alert me when an 
 - **Name area:** **Lumits default** fits a 1920 × 1025 game window. Otherwise use **Pick area…**
   during a fight and drag over the enemy's name, without the portrait. **Test now** shows the
   name it reads and how much of the area is gold (normal names 0%, a radiant ≈ 11%; it alerts
-  at 2% or more).
+  at 2% or more). During a 2v2 it reads the two wild Lumits' own cards instead, as a run does,
+  upper card (the left one on the field) first; the name area is empty in a 2v2.
 - The app itself stays silent: its taskbar button flashes and the status line says what happened.
 - **Phone:** sends an urgent notification with a screenshot of the game. Choose one:
   - **ntfy (simplest):** install the free *ntfy* app on your phone, add a subscription with a

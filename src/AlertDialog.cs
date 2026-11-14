@@ -181,6 +181,22 @@ namespace AutoClicker
                 ShowTest("Pick the name area first", BadColor);
                 return;
             }
+            // In a 2v2 the wild Lumits' names are on their own two cards, which a run checks instead of the name area.
+            if (space.Window != null)
+            {
+                using (Bitmap whole = space.Window.CaptureClient())
+                {
+                    bool duoRadiant;
+                    Bitmap picture;
+                    string duo = DescribeDuo(whole, settings.CatchSpots, (double)numGold.Value, out duoRadiant, out picture);
+                    if (duo != null)
+                    {
+                        ShowPicture(picture);
+                        ShowTest(duo, duoRadiant ? RadiantColor : GoodColor);
+                        return;
+                    }
+                }
+            }
             Bitmap shot = null;
             if (space.Window != null) shot = GoldText.Capture(space, area);
             else ScreenGrab.WhileHidden(new Form[] { Owner, this }, delegate { shot = GoldText.Capture(space, area); });
@@ -197,6 +213,43 @@ namespace AutoClicker
                          : name.Length == 0 ? "No name read (is a fight on?)"
                          : "Reads: " + name;
             ShowTest(reads + "\nGold now: " + gold.ToString("0.0") + "% — " + (radiant ? "RADIANT" : "normal name"), radiant ? RadiantColor : GoodColor);
+        }
+
+        /// <summary>
+        /// When a 2v2 shows in this picture of the game window: both wild Lumits' names and gold, read where a run reads
+        /// them (the upper card is the left one on the field), and the two names one above the other. Null for no 2v2.
+        /// </summary>
+        public static string DescribeDuo(Bitmap whole, IDictionary<string, Rectangle> picked, double alertAt, out bool radiant, out Bitmap picture)
+        {
+            radiant = false;
+            picture = null;
+            if (whole == null) return null;
+            Dictionary<string, Rectangle> spots = CatchSpots.Resolve(whole.Size, picked);
+            if (!CatchSpots.DuoShowing(whole, spots)) return null;
+            string[] keys = { CatchSpots.Enemy1Card, CatchSpots.Enemy2Card };
+            string[] where = { "2v2, upper: ", "lower: " };
+            var lines = new List<string>();
+            var names = new List<Bitmap>();
+            for (int i = 0; i < 2; i++)
+            {
+                Rectangle r = Rectangle.Intersect(spots[keys[i]], new Rectangle(Point.Empty, whole.Size));
+                Bitmap card = whole.Clone(r, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                names.Add(card);
+                double gold = GoldText.Percent(card, new Rectangle(Point.Empty, card.Size));
+                string name = ReadName(card);
+                bool gilded = gold >= alertAt;
+                radiant |= gilded;
+                lines.Add(where[i] + (string.IsNullOrEmpty(name) ? "?" : name) + ", gold " + gold.ToString("0.0") + "%" + (gilded ? "  RADIANT" : ""));
+            }
+            picture = new Bitmap(Math.Max(names[0].Width, names[1].Width), names[0].Height + names[1].Height + 4);
+            using (Graphics g = Graphics.FromImage(picture))
+            {
+                g.Clear(Color.Black);
+                g.DrawImage(names[0], new Rectangle(0, 0, names[0].Width, names[0].Height));
+                g.DrawImage(names[1], new Rectangle(0, names[0].Height + 4, names[1].Width, names[1].Height));
+            }
+            foreach (Bitmap b in names) b.Dispose();
+            return string.Join("\n", lines);
         }
 
         /// <summary>Reads the name on a worker thread: Windows' text recognition shouldn't wait on the window's own thread.</summary>

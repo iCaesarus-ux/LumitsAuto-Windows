@@ -501,6 +501,22 @@ namespace AutoClicker
                         Check(gold(g, CatchSpots.Enemy1Card) >= 4 && gold(g, CatchSpots.Enemy2Card) < 2, d[0] + ": the upper name turned gold is found (" + gold(g, CatchSpots.Enemy1Card).ToString("0.0") + "%)");
                     using (Bitmap g = Gild(b, s[CatchSpots.Enemy2Card]))
                         Check(gold(g, CatchSpots.Enemy2Card) >= 4 && gold(g, CatchSpots.Enemy1Card) < 2, d[0] + ": the lower name turned gold is found (" + gold(g, CatchSpots.Enemy2Card).ToString("0.0") + "%)");
+
+                    // The Alerts window's Test now, which used to read only the 1v1 name area (empty in a 2v2).
+                    bool radiant;
+                    Bitmap picture;
+                    string shown = AlertDialog.DescribeDuo(b, null, 2, out radiant, out picture);
+                    Console.WriteLine("      Test now: " + (shown ?? "(no 2v2)").Replace("\n", " | "));
+                    Check(shown != null && !radiant && picture != null && shown.Contains(d[1]) && shown.Contains(d[2]), d[0] + ": Test now shows both names, no radiant");
+                    if (picture != null) picture.Dispose();
+                    using (Bitmap g = Gild(b, s[CatchSpots.Enemy2Card]))
+                    {
+                        shown = AlertDialog.DescribeDuo(g, null, 2, out radiant, out picture);
+                        if (picture != null) picture.Dispose();
+                    }
+                    Console.WriteLine("      Test now, lower name gold: " + (shown ?? "(no 2v2)").Replace("\n", " | "));
+                    Check(shown != null && radiant && shown.Split('\n')[1].Contains("RADIANT") && !shown.Split('\n')[0].Contains("RADIANT"),
+                          d[0] + ": Test now marks the lower one as the radiant");
                 }
             }
             foreach (string one in new[] { "radiant.jpg", "game-turn-lowmp.png", "game-caught-sdoodo.png", "game-fainted-choice.png", "moomootaur.jpg", "tzik.jpg", "creebew.jpg", "coalython.jpg" })
@@ -513,6 +529,9 @@ namespace AutoClicker
                     string bars = string.Join(", ", new[] { CatchSpots.Lead2Bar, CatchSpots.Partner2Bar, CatchSpots.Enemy1Bar, CatchSpots.Enemy2Bar }
                         .Select(k => ScreenText.BarFill(b, s[k], ScreenText.IsRed).ToString("0.00") + "/" + CatchSpots.DuoBar(b, s, k).ToString("0.00")));
                     Check(!CatchSpots.DuoShowing(b, s), one + " (a 1v1) isn't taken for a 2v2 (2v2 bars, any red / from the left: " + bars + ")");
+                    bool radiant;
+                    Bitmap picture;
+                    Check(AlertDialog.DescribeDuo(b, null, 2, out radiant, out picture) == null, one + ": Test now reads the name area, as for any 1v1");
                 }
             }
         }
