@@ -34,6 +34,9 @@ namespace AutoClicker
         GroupBox grpSteps, grpWindow, grpCounter, grpTiming, grpHuman, grpRepeat, grpHotkeys;
         ComboBox cbWindow, cbArea;
         CheckBox chkBackground, chkCount;
+        CheckBox chkHid;
+        ComboBox cbHidPort;
+        Button btnHidRefresh;
         Label lblAlert, lblCounter, lblCounterMore, lblCatch;
         ListView lvSteps;
         Button btnPick, btnAdd, btnEdit, btnRemove, btnUp, btnDown, btnClear, btnSave, btnLoad, btnStart, btnStop, btnCatching;
@@ -73,7 +76,7 @@ namespace AutoClicker
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(680, 810);
+            ClientSize = new Size(680, 872);
             tips = new ToolTip { AutoPopDelay = 20000, InitialDelay = 400 };
 
             // Steps
@@ -202,19 +205,28 @@ namespace AutoClicker
             grpHotkeys.Controls.Add(hkAdd);
             AddHint(grpHotkeys, "Click a box, then press keys. Delete clears it.", 14, 86);
 
+            // Mouse output
+            var grpHid = AddGroup(this, "Mouse output", 12, 728, 656, 56);
+            chkHid = AddCheck(grpHid, "Use Pico HID mouse (looks like a real mouse)", 14, 22);
+            cbHidPort = new ComboBox { Location = new Point(330, 20), Width = 196, DropDownStyle = ComboBoxStyle.DropDownList };
+            grpHid.Controls.Add(cbHidPort);
+            btnHidRefresh = AddButton(grpHid, "Refresh", 532, 19, 104, 25, delegate { FillHidPorts(); });
+            tips.SetToolTip(chkHid, "Sends movement and clicks through the Pico so Windows sees a real mouse instead of\nsynthetic input. Turn background mode off while this is on.");
+            tips.SetToolTip(cbHidPort, "The Pico's data port (the second of its two COM ports).");
+
             // Start / stop
             var bigFont = new Font("Segoe UI", 10F, FontStyle.Bold);
-            btnStart = AddButton(this, "", 12, 728, 170, 40, delegate { StartRun(true); });
+            btnStart = AddButton(this, "", 12, 792, 170, 40, delegate { StartRun(true); });
             btnStart.Font = bigFont;
-            btnStop = AddButton(this, "", 190, 728, 170, 40, delegate { engine.Stop(); });
+            btnStop = AddButton(this, "", 190, 792, 170, 40, delegate { engine.Stop(); });
             btnStop.Font = bigFont;
             btnStop.Enabled = false;
-            chkTopMost = AddCheck(this, "Always on top", 566, 739);
+            chkTopMost = AddCheck(this, "Always on top", 566, 803);
 
             lblStatus = new Label
             {
                 AutoSize = false,
-                Location = new Point(12, 778),
+                Location = new Point(12, 842),
                 Size = new Size(656, 22),
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 TextAlign = ContentAlignment.MiddleLeft
@@ -228,7 +240,16 @@ namespace AutoClicker
             chkBreaks.CheckedChanged += delegate { UpdateEnabledStates(); };
             rbCycles.CheckedChanged += delegate { UpdateEnabledStates(); };
             chkTopMost.CheckedChanged += delegate { TopMost = chkTopMost.Checked; };
-            chkBackground.CheckedChanged += delegate { UpdateEnabledStates(); };
+            chkBackground.CheckedChanged += delegate
+            {
+                if (chkBackground.Checked) chkHid.Checked = false;
+                UpdateEnabledStates();
+            };
+            chkHid.CheckedChanged += delegate
+            {
+                if (chkHid.Checked) chkBackground.Checked = false;
+                UpdateEnabledStates();
+            };
             chkCount.CheckedChanged += delegate
             {
                 settings.CountLumits = chkCount.Checked;
@@ -348,6 +369,8 @@ namespace AutoClicker
             chkTopMost.Checked = settings.TopMost;
             FillWindowList();
             chkBackground.Checked = settings.Background && HasTarget;
+            chkHid.Checked = settings.HidMouse;
+            FillHidPorts();
             chkCount.Checked = settings.CountLumits;
             UpdateAlertLabel();
             UpdateCounterLabel();
@@ -376,6 +399,8 @@ namespace AutoClicker
             settings.AddPointHotkey = hkAdd.Hotkey;
             settings.TopMost = chkTopMost.Checked;
             settings.Background = chkBackground.Checked && HasTarget;
+            settings.HidMouse = chkHid.Checked;
+            settings.HidPort = (cbHidPort.SelectedItem as string) ?? "";
             settings.CountLumits = chkCount.Checked;
         }
 
@@ -398,7 +423,8 @@ namespace AutoClicker
             numCycles.Enabled = rbCycles.Checked;
             numBreakEvery.Enabled = numBreakMin.Enabled = numBreakMax.Enabled = chkBreaks.Checked;
             chkBackground.Enabled = HasTarget;
-            chkStopOnMouse.Enabled = !chkBackground.Checked; // in background mode the real pointer is yours anyway
+            chkStopOnMouse.Enabled = !chkBackground.Checked && !chkHid.Checked;
+            cbHidPort.Enabled = btnHidRefresh.Enabled = chkHid.Checked;
         }
 
         // ---------------------------------------------------------------- game window
@@ -446,6 +472,16 @@ namespace AutoClicker
             }
             cbWindow.SelectedIndex = select;
             cbWindow.EndUpdate();
+        }
+
+        void FillHidPorts()
+        {
+            cbHidPort.BeginUpdate();
+            cbHidPort.Items.Clear();
+            foreach (string p in System.IO.Ports.SerialPort.GetPortNames().OrderBy(n => n)) cbHidPort.Items.Add(p);
+            cbHidPort.SelectedItem = settings.HidPort;
+            if (cbHidPort.SelectedIndex < 0 && cbHidPort.Items.Count > 0) cbHidPort.SelectedIndex = 0;
+            cbHidPort.EndUpdate();
         }
 
         void OnWindowChosen()
@@ -872,7 +908,24 @@ namespace AutoClicker
             // Without a name card it simply doesn't count; catching needs the names, so it counts too.
             bool count = (chkCount.Checked || catching != null) && NameCardSet;
 
-            if (fromButton && !toggleHotkeyActive && points.Count > 0 && !background)
+            bool hid = chkHid.Checked;
+            if (hid)
+            {
+                string port = cbHidPort.SelectedItem as string;
+                if (string.IsNullOrEmpty(port))
+                {
+                    SetStatus("Choose the Pico's COM port, or untick the HID mouse.", WarningColor);
+                    return;
+                }
+                if (!HidMouse.Connect(port))
+                {
+                    SetStatus("Couldn't open " + port + ". Is the Pico plugged in, and is this its data port?", WarningColor);
+                    return;
+                }
+            }
+            Pointer.UseHid = hid;
+
+            if (fromButton && !toggleHotkeyActive && points.Count > 0 && !background && !hid)
             {
                 modalOpen = true;
                 DialogResult answer;
@@ -891,6 +944,7 @@ namespace AutoClicker
             SaveSettingsQuietly();
             var options = new RunOptions
             {
+                Hid = hid,
                 Points = points.Select(p => p.Clone()).ToArray(),
                 Space = space,
                 Background = background,
@@ -899,7 +953,7 @@ namespace AutoClicker
                 JitterPx = settings.RandomizePosition ? settings.JitterPx : 0,
                 Cycles = settings.RepeatForever ? 0 : settings.Cycles,
                 HumanMouse = settings.HumanMouse,
-                StopOnUserMouse = settings.StopOnUserMouse && !background,
+                StopOnUserMouse = settings.StopOnUserMouse && !background && !hid,
                 RedoPrevious = settings.RedoPrevious || catching != null, // your turn coming back is how a fight goes on
                 BreakEveryMs = settings.Breaks ? settings.BreakEveryMin * 60000 : 0,
                 BreakMinMs = settings.BreakMinSec * 1000,
@@ -947,6 +1001,8 @@ namespace AutoClicker
             PostToUi(delegate
             {
                 if (engine.IsRunning) return; // a new run already started
+                HidMouse.Disconnect();
+                Pointer.UseHid = false;
                 SetRunningUi(false);
 
                 if (result.RadiantFound)
@@ -1028,6 +1084,7 @@ namespace AutoClicker
             engine.StopAndWait(1000);
             ReadControlsIntoSettings();
             SaveSettingsQuietly();
+            HidMouse.Disconnect();
             base.OnFormClosing(e);
         }
 

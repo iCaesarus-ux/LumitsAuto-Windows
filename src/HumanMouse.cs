@@ -13,7 +13,7 @@ namespace AutoClicker
     /// </summary>
     public static class HumanMouse
     {
-        const int TickMs = 7;
+        public static int TickMs = 7;
 
         public struct Sample
         {

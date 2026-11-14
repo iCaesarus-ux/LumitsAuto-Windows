@@ -133,6 +133,8 @@ namespace AutoClicker
         public StepSpace Space = StepSpace.WholeScreen;
         /// <summary>Send mouse messages straight to the game window instead of moving the real pointer.</summary>
         public bool Background;
+        /// <summary>Send mouse input through the Pico HID bridge, so Windows sees a real mouse.</summary>
+        public bool Hid;
         public int IntervalMs;
         /// <summary>Each wait varies by up to this many percent either way; 0 = exact timing.</summary>
         public int RandomPercent;

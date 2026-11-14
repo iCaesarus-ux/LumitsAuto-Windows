@@ -36,6 +36,10 @@ namespace AutoClicker
         public string TargetTitle = "";
         public bool Background;
 
+        /// <summary>Drive the pointer through a Pico HID bridge instead of SendInput.</summary>
+        public bool HidMouse;
+        public string HidPort = "";
+
         /// <summary>Radiant alert: check the enemy's name for gold before clicking step AlertStep (1-based).</summary>
         public bool AlertEnabled;
         /// <summary>The attack step and the enemy's name card, used by both the radiant check and the counter.</summary>
@@ -131,6 +135,8 @@ namespace AutoClicker
             lines.Add("targetProcess=" + TargetProcess);
             lines.Add("targetTitle=" + TargetTitle);
             lines.Add("background=" + Flag(Background));
+            lines.Add("hidMouse=" + Flag(HidMouse));
+            lines.Add("hidPort=" + HidPort);
             lines.Add("alert=" + Flag(AlertEnabled));
             lines.Add("alertStep=" + Num(AlertStep));
             lines.Add("alertArea=" + Num(AlertArea.X) + "," + Num(AlertArea.Y) + "," + Num(AlertArea.Width) + "," + Num(AlertArea.Height));
@@ -212,6 +218,8 @@ namespace AutoClicker
                     case "targetprocess": TargetProcess = val; break;
                     case "targettitle": TargetTitle = val; break;
                     case "background": Background = val == "1"; break;
+                    case "hidmouse": HidMouse = val == "1"; break;
+                    case "hidport": HidPort = val; break;
                     case "alert": AlertEnabled = val == "1"; break;
                     case "alertstep": AlertStep = Int(val, AlertStep); break;
                     case "alertgold": AlertGoldPercent = Int(val, AlertGoldPercent); break;

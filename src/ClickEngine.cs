@@ -1201,16 +1201,16 @@ namespace AutoClicker
             if (!o.Background)
             {
                 Thread.Sleep(Triangular(60, 140, 0.4));
-                Native.Button(MouseButton.Left, true);
+                Pointer.Button(MouseButton.Left, true);
                 try
                 {
                     Thread.Sleep(Triangular(80, 160, 0.4));
-                    Play(path, p => Native.SetCursorPos(p.X + origin.X, p.Y + origin.Y));
+                    Play(path, p => Pointer.MoveTo(p.X + origin.X, p.Y + origin.Y));
                     Thread.Sleep(Triangular(80, 160, 0.4));
                 }
                 finally
                 {
-                    Native.Button(MouseButton.Left, false);
+                    Pointer.Button(MouseButton.Left, false);
                 }
                 Point now;
                 restPos = Native.TryGetCursorPos(out now) ? now : new Point(b.X + origin.X, b.Y + origin.Y);
@@ -1529,9 +1529,9 @@ namespace AutoClicker
             var screenTarget = new Point(target.X + origin.X, target.Y + origin.Y);
             Point from;
             if (o.HumanMouse && Native.TryGetCursorPos(out from))
-                Play(HumanMouse.Plan(from, screenTarget, targetSize, rnd), p => Native.SetCursorPos(p.X, p.Y));
+                Play(HumanMouse.Plan(from, screenTarget, targetSize, rnd), p => Pointer.MoveTo(p.X, p.Y));
             else
-                Native.SetCursorPos(screenTarget.X, screenTarget.Y);
+                Pointer.MoveTo(screenTarget.X, screenTarget.Y);
 
             Point now;
             restPos = Native.TryGetCursorPos(out now) ? now : screenTarget;
@@ -1558,15 +1558,15 @@ namespace AutoClicker
             }
             // A short settle before pressing, and a real press-and-hold, like a finger.
             Thread.Sleep(Triangular(40, 140, 0.35));
-            Native.Button(button, true);
+            Pointer.Button(button, true);
             Thread.Sleep(Triangular(55, 130, 0.35));
-            Native.Button(button, false);
+            Pointer.Button(button, false);
             if (doubleClick)
             {
                 Thread.Sleep(Triangular(70, 140, 0.4));
-                Native.Button(button, true);
+                Pointer.Button(button, true);
                 Thread.Sleep(Triangular(45, 100, 0.4));
-                Native.Button(button, false);
+                Pointer.Button(button, false);
             }
         }
 
