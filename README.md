@@ -181,6 +181,11 @@ that they were the phone's, and on the PC a 2v2 wasn't seen at all, so neither w
 2v2 needs both your bars and a wild one, each red from its left end, so a 1v1's red card frame or a red
 radiant's portrait can't pass for one.
 
+The 2v2 check happens whenever the radiant check is on and a game window is chosen, also with catching
+off (*Catch radiants* unticked, catching and healing off). Until 15 November it needed catching's setup, and
+without it only the 1v1 name area was read, which misses both of a 2v2's name cards: a radiant in a 2v2
+went unseen. A wild Lumit whose bar reads empty as the 2v2 starts still has its name checked.
+
 `tests/run-radiant-test.cmd` tests this in a pretend game window placed off-screen, without moving the
 real pointer. In 720,000 simulated fights of that decision, with Strike doing 6 to 60 damage, varying by
 up to 13% per hit, and 15% crits, one radiant died. It hasn't caught a real radiant yet.
@@ -340,10 +345,14 @@ doesn't move. The pictures they use are in `tests/pictures`.
 
 - **Radiant catching**, from the repository's folder:
   `tests\run-radiant-test.cmd tests\pictures\pc\radiant.jpg tests\pictures\pc\game-turn-lowmp.png tests\pictures\pc\game-caught-sdoodo.png tests\pictures\pc\game-fainted-choice.png`
-  It also covers radiants only (runs, a failed run, a radiant after runs) and the PC's 2v2s, from the
-  `duo-*.png` pictures beside `radiant.jpg`: the spots on them, and a pretend PC 2v2 with and without a radiant.
-- **2v2 fights:** `tests\DuoTest.cs` takes the folder `tests\pictures\forest`. Build it the way
-  `run-radiant-test.cmd` does, with `/main:AutoClicker.DuoTest` and `tests\DuoTest.cs` in place of the radiant test.
-  Those pictures are the phone's, so it uses the phone's 2v2 spots (four cards in a row). Two of its checks
-  failed before radiants only was added and still do: catches put down to the right Lumit by their caught name
-  (7 of 16), and "no stray clicks and no stops" (fails about two runs in three).
+  It also covers radiants only (runs, a failed run, a radiant after runs), getting stuck on a screen the steps
+  don't know, and steps' pictures by day and by night (which also use the `duo-*.png` pictures beside
+  `radiant.jpg`). It takes about three minutes.
+- **Radiants in 2v2s:** `tests\run-duo-test.cmd` (about 10 seconds), on the PC pictures in `tests\pictures\pc`:
+  the 2v2 spots on `duo-*.png` (seen as 2v2s, both names read, a gold name in either card found, no 1v1 taken
+  for a 2v2, Test now), then pretend runs. A radiant in either card, or both, stops the run with nothing
+  clicked and says which one, whether the run is radiants only, catching, or the radiant check alone; a
+  card whose bar reads empty is still checked; 2v2s without a radiant are run from (radiants only) or get
+  the attack step; 1v1s and 2v2s mixed. No radiant in a 2v2 has been seen yet, so one is made by copying
+  your own radiant's gold name (Minoking's, on your upper card in those pictures) over a wild name. 2v2
+  catching (targets, the second Lumit's moves) isn't tested: it hasn't been seen working on the PC.

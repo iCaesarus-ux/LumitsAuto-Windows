@@ -13,17 +13,19 @@ using System.Windows.Forms;
 namespace AutoClicker
 {
     /// <summary>
-    /// Plays 2v2 fights against the real ClickEngine, in a pretend game window placed off-screen. The screens are real
-    /// screenshots of the phone, enlarged to a 1822 × 1025 window (the phone's shape), with the HP bars painted in. It
-    /// reads them with the app's own text recognition, so "Choose an action for Lacerath." and the caught names are real.
-    /// DuoTest folderOfPhoneScreenshots
+    /// Radiant checks in PC 2v2s: the 2v2 spots on screenshots of the owner's game (1920 × 1025, two cards a side, one above
+    /// the other), then the real ClickEngine against a pretend game window placed off-screen. A radiant in a 2v2 hasn't been
+    /// seen yet, so one is made by copying the owner's own radiant's gold name (Minoking, your upper card in these pictures)
+    /// over a wild Lumit's name. Nothing is clicked in your game and the real pointer doesn't move.
+    ///   DuoTest folderOfPcPictures   (tests\pictures\pc)
     /// </summary>
     static class DuoTest
     {
-        const int W = 1822, H = 1025;
-        static Bitmap leadMenu, partnerMenu, attackTarget, captureTarget, waiting, caughtA, caughtB, victory, map;
+        const int W = 1920, H = 1025;
         static int failures;
         static string tempDir;
+        /// <summary>radiant.jpg: a 1v1 with the fight menu lit for your turn. Its menu goes over the 2v2 pictures.</summary>
+        static Bitmap lit;
 
         static void Check(bool ok, string what)
         {
@@ -31,74 +33,41 @@ namespace AutoClicker
             if (!ok) failures++;
         }
 
-        static Bitmap Load(string dir, string name)
-        {
-            using (var phone = new Bitmap(Path.Combine(dir, "6215183_1102" + name + ".png")))
-            {
-                var big = new Bitmap(W, H, PixelFormat.Format32bppArgb);
-                using (Graphics g = Graphics.FromImage(big))
-                {
-                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    g.DrawImage(phone, 0, 0, W, H);
-                }
-                return big;
-            }
-        }
+        /// <summary>How the run is set up: radiants only; catching on (radiants caught); or catching off, a radiant only stopping the run.</summary>
+        enum Mode { RadiantsOnly, Catching, StopOnly }
 
-        class Wild
-        {
-            public double Hp = 1;
-            public bool Caught, Killed;
-            public string Name;
-        }
-
-        /// <summary>The pretend 2v2: lead chooses, then the second Lumit, then the round plays out, second Lumit first.</summary>
+        /// <summary>The pretend game: the map, a fight, or Victory, reacting to clicks.</summary>
         class Game : Form
         {
-            public enum Screen { LeadMenu, PartnerMenu, Target, Wait, Caught, Victory, Map }
+            public enum Screen { Map, Fight, Victory }
 
-            public Screen State = Screen.Map;
-            public readonly Wild[] Wild = { new Wild { Name = "Piroink" }, new Wild { Name = "Finny" } };
-            public double[] LeadDamage = { 0.30, 0.95, 0.72, 0.5, 0.45, 0.4 }, PartnerDamage = { 0.25, 0.3, 0.38, 0.3, 0.6, 1.1 };
-            public double CaptureChance = 0.5, MissClick = 0.25;
-            public Random Random = new Random(1);
+            /// <summary>The stone on the map that starts the next fight, the Run button (the boot, bottom left) and the attack step.</summary>
+            public static readonly Rectangle Stone = new Rectangle(900, 500, 40, 40), RunButton = new Rectangle(212, 914, 50, 50),
+                                             AttackStep = new Rectangle(1240, 932, 120, 26);
+
+            public Screen State = Screen.Fight;
+            /// <summary>The fight on screen, and the ones after it, each started by clicking the stone.</summary>
+            public Bitmap Fight;
+            public readonly Queue<Bitmap> NextFights = new Queue<Bitmap>();
             public volatile bool Finished;
-            public readonly List<string> Lead = new List<string>(), Partner = new List<string>(), Trace = new List<string>(), Odd = new List<string>();
-            public readonly List<Wild> CaughtQueue = new List<Wild>();
-            public int Keeps, Rounds, IgnoredClicks;
-            /// <summary>Radiants only: the Run button (bottom left), runs made, and fights still to come after one is run from.</summary>
-            public Rectangle RunArea;
-            public int Runs, FightsLeft = -1;
+            public int Runs, Attacks, Fights = 1;
+            public readonly List<string> Trace = new List<string>();
+            /// <summary>Clicks that had no business happening.</summary>
+            public readonly List<string> Odd = new List<string>();
 
-            readonly Dictionary<string, Rectangle> spots;
-            readonly Rectangle[] moves = new Rectangle[6];
             readonly object sync = new object();
             Bitmap shown;
-            bool chooserIsLead = true, capturing;
-            int highlighted, slot;
 
-            public Game(Dictionary<string, Rectangle> spots)
+            public Game()
             {
-                this.spots = spots;
-                Rectangle first = spots[CatchSpots.Strike], third = spots[CatchSpots.Siphon];
-                int rowGap = (int)Math.Round(56.0 * first.Height / 26);
-                for (int s = 0; s < 6; s++)
-                {
-                    int column = s % 3;
-                    int x = column == 0 ? first.X : column == 2 ? third.X : (first.X + third.X) / 2;
-                    moves[s] = new Rectangle(x, first.Y + s / 3 * rowGap, first.Width, first.Height);
-                }
                 FormBorderStyle = FormBorderStyle.None;
                 ShowInTaskbar = false;
                 StartPosition = FormStartPosition.Manual;
-                Bounds = new Rectangle(-7000, -7000, W, H);
+                Bounds = new Rectangle(-6000, -6000, W, H);
                 SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.Opaque, true);
-                Redraw();
             }
 
             protected override bool ShowWithoutActivation { get { return true; } }
-
-            bool Alive(int i) { return !Wild[i].Caught && !Wild[i].Killed; }
 
             public void Redraw()
             {
@@ -117,36 +86,20 @@ namespace AutoClicker
 
             Bitmap Picture()
             {
-                Bitmap source;
-                switch (State)
+                var bmp = new Bitmap(W, H, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(bmp))
                 {
-                    case Screen.LeadMenu: source = leadMenu; break;
-                    case Screen.PartnerMenu: source = partnerMenu; break;
-                    case Screen.Target: source = capturing ? captureTarget : attackTarget; break;
-                    case Screen.Wait: source = waiting; break;
-                    case Screen.Caught: source = Keeps % 2 == 0 ? caughtA : caughtB; break;
-                    case Screen.Victory: source = victory; break;
-                    default: source = map; break;
-                }
-                var bmp = new Bitmap(source);
-                if (State <= Screen.Wait)
-                {
-                    using (Graphics g = Graphics.FromImage(bmp))
-                    {
-                        for (int i = 0; i < 2; i++)
-                        {
-                            Rectangle r = spots[i == 0 ? CatchSpots.Enemy1Bar : CatchSpots.Enemy2Bar];
-                            g.FillRectangle(new SolidBrush(Color.FromArgb(30, 30, 35)), r);
-                            if (Alive(i)) g.FillRectangle(new SolidBrush(Color.FromArgb(230, 50, 60)), r.X, r.Y, (int)Math.Round(r.Width * Wild[i].Hp), r.Height);
-                        }
-                    }
+                    if (State == Screen.Map) g.FillRectangle(Brushes.Olive, 0, 0, W, H);
+                    else if (State == Screen.Victory) g.FillRectangle(Brushes.Teal, 0, 0, W, H);
+                    else g.DrawImage(Fight, new Rectangle(0, 0, W, H));
                 }
                 return bmp;
             }
 
             protected override void WndProc(ref Message m)
             {
-                if (m.Msg == 0x0202) // WM_LBUTTONUP
+                const int WM_LBUTTONUP = 0x0202;
+                if (m.Msg == WM_LBUTTONUP)
                 {
                     long l = m.LParam.ToInt64();
                     Clicked(new Point((int)(l & 0xFFFF), (int)((l >> 16) & 0xFFFF)));
@@ -155,151 +108,57 @@ namespace AutoClicker
                 base.WndProc(ref m);
             }
 
-            int Tapped(Point p)
-            {
-                if (spots[CatchSpots.Enemy1Tap].Contains(p) || spots[CatchSpots.Enemy1TapLow].Contains(p)) return 0;
-                if (spots[CatchSpots.Enemy2Tap].Contains(p) || spots[CatchSpots.Enemy2TapLow].Contains(p)) return 1;
-                return -1;
-            }
-
             void Clicked(Point p)
             {
                 switch (State)
                 {
                     case Screen.Map:
-                        if (FightsLeft == 0)
+                        if (!Stone.Contains(p))
+                        {
+                            Odd.Add("map (" + p.X + "," + p.Y + ")");
+                            break;
+                        }
+                        if (NextFights.Count == 0)
                         {
                             Finished = true;
                             break;
                         }
-                        if (FightsLeft > 0) FightsLeft--;
-                        State = Screen.LeadMenu;
+                        Fight = NextFights.Dequeue();
+                        Fights++;
+                        Trace.Add("fight " + Fights);
+                        State = Screen.Fight;
                         break;
-                    case Screen.LeadMenu:
-                    case Screen.PartnerMenu:
-                        if (RunArea.Contains(p))
+                    case Screen.Fight:
+                        if (RunButton.Contains(p))
                         {
                             Runs++;
                             Trace.Add("Run");
-                            chooserIsLead = true;
                             State = Screen.Map;
                         }
-                        else if (spots[CatchSpots.Capture].Contains(p))
+                        else if (AttackStep.Contains(p))
                         {
-                            capturing = true;
-                            ToTarget();
+                            Attacks++;
+                            Trace.Add("attack");
+                            State = Screen.Victory;
                         }
-                        else
-                        {
-                            int s = Array.FindIndex(moves, r => r.Contains(p));
-                            if (s >= 0)
-                            {
-                                capturing = false;
-                                slot = s;
-                                ToTarget();
-                            }
-                            else Odd.Add("click at " + p + " on a menu");
-                        }
-                        break;
-                    case Screen.Target:
-                        int t = Tapped(p);
-                        if (t < 0)
-                        {
-                            Odd.Add("click at " + p + " while picking a target");
-                            break;
-                        }
-                        if (Random.NextDouble() < MissClick)
-                        {
-                            IgnoredClicks++;
-                            break;
-                        }
-                        if (!Alive(t))
-                        {
-                            Odd.Add("clicked a Lumit that's gone");
-                            break;
-                        }
-                        if (t != highlighted)
-                        {
-                            highlighted = t;
-                            break;
-                        }
-                        (chooserIsLead ? Lead : Partner).Add((capturing ? "capture" : "move" + slot) + ">" + t);
-                        if (chooserIsLead)
-                        {
-                            chooserIsLead = false;
-                            State = Screen.PartnerMenu;
-                        }
-                        else Resolve();
-                        break;
-                    case Screen.Caught:
-                        if (spots[CatchSpots.Keep].Contains(p))
-                        {
-                            Keeps++;
-                            CaughtQueue.RemoveAt(0);
-                            State = CaughtQueue.Count > 0 ? Screen.Caught : Screen.Victory;
-                        }
+                        else Odd.Add("(" + p.X + "," + p.Y + ") in a fight");
                         break;
                     case Screen.Victory:
+                        // The step's Continue.
                         State = Screen.Map;
-                        Finished = true;
+                        if (NextFights.Count == 0) Finished = true;
                         break;
                 }
                 Redraw();
             }
+        }
 
-            void ToTarget()
-            {
-                State = Screen.Target;
-                highlighted = Alive(0) ? 0 : 1;
-            }
-
-            void Resolve()
-            {
-                Act(Partner.LastOrDefault(), PartnerDamage);
-                Act(Lead.LastOrDefault(), LeadDamage);
-                Rounds++;
-                Trace.Add("round " + Rounds + ": second " + Partner.LastOrDefault() + ", lead " + Lead.LastOrDefault() + " -> " + Show(0) + " / " + Show(1));
-                chooserIsLead = true;
-                State = Screen.Wait;
-                var timer = new System.Windows.Forms.Timer { Interval = 1500 };
-                timer.Tick += delegate
-                {
-                    timer.Dispose();
-                    State = Alive(0) || Alive(1) ? Screen.LeadMenu : CaughtQueue.Count > 0 ? Screen.Caught : Screen.Victory;
-                    Redraw();
-                };
-                timer.Start();
-            }
-
-            string Show(int i)
-            {
-                return Wild[i].Caught ? "caught" : Wild[i].Killed ? "dead" : Math.Round(Wild[i].Hp * 100) + "%";
-            }
-
-            void Act(string action, double[] damage)
-            {
-                if (action == null) return;
-                string[] parts = action.Split('>');
-                int t = int.Parse(parts[1]);
-                if (!Alive(t)) return;
-                if (parts[0] == "capture")
-                {
-                    if (Random.NextDouble() < CaptureChance + (1 - Wild[t].Hp) * 0.4)
-                    {
-                        Wild[t].Caught = true;
-                        CaughtQueue.Add(Wild[t]);
-                    }
-                    return;
-                }
-                double hit = damage[int.Parse(parts[0].Substring(4))] * (1 + 0.08 * (2 * Random.NextDouble() - 1));
-                if (Random.NextDouble() < 0.1) hit *= 1.5;
-                Wild[t].Hp -= hit;
-                if (Wild[t].Hp <= 0)
-                {
-                    Wild[t].Hp = 0;
-                    Wild[t].Killed = true;
-                }
-            }
+        class Played
+        {
+            public Game Game;
+            public RunResult Result;
+            public LumitCounter Counter;
+            public List<string> Activity = new List<string>();
         }
 
         static GameWindow WindowFor(IntPtr handle)
@@ -308,47 +167,19 @@ namespace AutoClicker
             return (GameWindow)make.Invoke(new object[] { handle, "Pretend game", "test" });
         }
 
-        class Played
-        {
-            public Game Game;
-            public RunResult Result;
-            public LumitCounter Counter;
-            public List<string> Notices = new List<string>();
-            public List<string> Activity = new List<string>();
-        }
-
-        /// <summary>The Run button, bottom left in a fight (the boot), as the radiant check's step in radiants-only runs.</summary>
-        static readonly Rectangle RunButton = new Rectangle(164, 914, 50, 50);
-
         /// <summary>
-        /// The phone's 2v2 spots, its four cards in a row along the top, which these phone pictures have. The app's own are
-        /// the PC's, two cards a side, one above the other.
+        /// A run on the pretend game, which starts on <paramref name="first"/>. Steps: the stone on the map, the fight's step (the
+        /// attack, or the Run button in radiants-only runs, which is the radiant check's step) and Victory's Continue.
         /// </summary>
-        static Dictionary<string, Rectangle> PhoneDuoSpots()
+        static Played Play(Mode mode, Bitmap first, Bitmap[] after = null, bool catchRadiants = true)
         {
-            var size = new Size(W, H);
-            Func<string, Anchor, int, int, int, int, Rectangle> at = (key, anchor, x, y, w, h) => new Spot(key, "", "", SpotKind.Bar, anchor, x, y, w, h).For(size);
-            return new Dictionary<string, Rectangle>
-            {
-                { CatchSpots.Lead2Bar, at(CatchSpots.Lead2Bar, Anchor.Left, 191, 83, 114, 8) },
-                { CatchSpots.Partner2Bar, at(CatchSpots.Partner2Bar, Anchor.Left, 518, 83, 114, 8) },
-                { CatchSpots.Enemy1Bar, at(CatchSpots.Enemy1Bar, Anchor.Right, 1319, 83, 110, 8) },
-                { CatchSpots.Enemy2Bar, at(CatchSpots.Enemy2Bar, Anchor.Right, 1647, 83, 110, 8) },
-                { CatchSpots.Enemy1Card, at(CatchSpots.Enemy1Card, Anchor.Right, 1291, 34, 140, 44) },
-                { CatchSpots.Enemy2Card, at(CatchSpots.Enemy2Card, Anchor.Right, 1618, 34, 140, 44) },
-            };
-        }
-
-        static Played Play(LumitCounter counter, Action<Game> setUp, bool radiantsOnly = false)
-        {
-            Dictionary<string, Rectangle> spots = CatchSpots.Resolve(new Size(W, H), PhoneDuoSpots());
+            Dictionary<string, Rectangle> spots = CatchSpots.Resolve(new Size(W, H), null);
             Game game = null;
             var ready = new ManualResetEvent(false);
             var ui = new Thread(() =>
             {
-                game = new Game(spots);
-                if (radiantsOnly) game.RunArea = RunButton;
-                setUp(game);
+                game = new Game { Fight = first };
+                if (after != null) foreach (Bitmap b in after) game.NextFights.Enqueue(b);
                 game.Redraw();
                 game.Show();
                 ready.Set();
@@ -361,47 +192,52 @@ namespace AutoClicker
             IntPtr handle = IntPtr.Zero;
             game.Invoke((MethodInvoker)delegate { handle = game.Handle; });
 
-            Rectangle corner = new Rectangle(20, 300, 60, 60);
+            var corner = new Rectangle(20, 300, 60, 60);
             Rectangle watch = spots[CatchSpots.Capture];
-            var steps = new[]
+            Rectangle fightStep = mode == Mode.RadiantsOnly ? Game.RunButton : Game.AttackStep;
+            Snapshot mapLook, victoryLook;
+            using (var b = new Bitmap(W, H))
             {
-                new ClickPoint { X = 880, Y = 500, Width = 40, Height = 40, WaitForScreen = true, WatchArea = corner, Snapshot = Snapshot.FromBitmap(map, corner), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = 20 },
-                radiantsOnly
-                    ? new ClickPoint { X = RunButton.X, Y = RunButton.Y, Width = RunButton.Width, Height = RunButton.Height, WaitForScreen = true, WatchArea = watch, Snapshot = Snapshot.FromBitmap(leadMenu, watch), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = 30 }
-                    : new ClickPoint { X = 1240, Y = 932, Width = 120, Height = 26, WaitForScreen = true, WatchArea = watch, Snapshot = Snapshot.FromBitmap(leadMenu, watch), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = 30 },
-                new ClickPoint { X = 880, Y = 840, Width = 60, Height = 30, WaitForScreen = true, WatchArea = new Rectangle(760, 160, 300, 70), Snapshot = Snapshot.FromBitmap(victory, new Rectangle(760, 160, 300, 70)), ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = 30 },
+                using (Graphics g = Graphics.FromImage(b)) g.FillRectangle(Brushes.Olive, 0, 0, W, H);
+                mapLook = Snapshot.FromBitmap(b, corner);
+                using (Graphics g = Graphics.FromImage(b)) g.FillRectangle(Brushes.Teal, 0, 0, W, H);
+                victoryLook = Snapshot.FromBitmap(b, corner);
+            }
+            Func<Rectangle, Rectangle, Snapshot, ClickPoint> step = (click, area, look) => new ClickPoint
+            {
+                X = click.X, Y = click.Y, Width = click.Width, Height = click.Height, WaitForScreen = true, WatchArea = area, Snapshot = look,
+                ReactMinMs = 30, ReactMaxMs = 60, DelayMs = 100, TimeoutSec = 20
             };
-            var played = new Played { Game = game, Counter = counter };
+            var played = new Played { Game = game, Counter = new LumitCounter(Path.Combine(tempDir, "lumits-" + Guid.NewGuid().ToString("N") + ".txt")) };
             var run = new RunOptions
             {
-                Points = steps,
+                Points = new[] { step(Game.Stone, corner, mapLook), step(fightStep, watch, Snapshot.FromBitmap(lit, watch)), step(Game.Stone, corner, victoryLook) },
                 Space = new StepSpace(WindowFor(handle)),
                 Background = true,
                 IntervalMs = 100,
                 HumanMouse = false,
                 RedoPrevious = true,
                 NameStep = 1,
-                NameArea = GoldText.LumitsNameAreaFor(new Size(W, H)),
+                NameArea = GoldText.LumitsNameArea,
                 RadiantCheck = true,
                 AlertGoldPercent = 2,
-                Counter = counter,
-                Catch = new CatchOptions
+                Counter = played.Counter,
+                Catch = mode == Mode.StopOnly ? null : new CatchOptions
                 {
-                    CatchOn = true,
-                    CatchRadiants = true,
-                    RadiantsOnly = radiantsOnly,
+                    CatchOn = mode == Mode.Catching,
+                    CatchRadiants = catchRadiants,
+                    RadiantsOnly = mode == Mode.RadiantsOnly,
                     HealBelowHp = 0,
                     LeadMaxHp = 182,
-                    PartnerWeaken = 2,
-                    PartnerKill = 5,
                     BorrowForTargets = false, // the test must never move your real pointer
+                    DragRealPointer = false,
                     Spots = spots,
                     Log = new CatchLog(tempDir)
-                }
+                },
+                DuoSpots = spots // as the main window passes them whenever there's a game window
             };
             var engine = new ClickEngine();
             var finished = new ManualResetEvent(false);
-            engine.Notice += (t, m, p) => { lock (played.Notices) played.Notices.Add(t); };
             engine.Progress += (clicks, cyc, activity) =>
             {
                 lock (played.Activity)
@@ -413,101 +249,282 @@ namespace AutoClicker
             while (!finished.WaitOne(100))
             {
                 if (game.Finished) engine.Stop();
-                if (clock.Elapsed.TotalSeconds > 150)
+                if (clock.Elapsed.TotalSeconds > 60)
                 {
-                    Check(false, "A fight had to be stopped from outside. " + string.Join("; ", game.Trace));
+                    Check(false, "A run had to be stopped from outside. " + string.Join(", ", game.Trace));
                     engine.Stop();
                 }
             }
             game.Invoke((MethodInvoker)delegate { game.Close(); });
-            if (played.Result.Problem != null) Console.WriteLine("      Stopped: " + played.Result.Problem);
             return played;
+        }
+
+        /// <summary>Nothing at all was clicked in the fight: no move, no Run, no target, no stray click.</summary>
+        static bool Untouched(Played p)
+        {
+            return p.Game.Trace.Count == 0 && p.Game.Odd.Count == 0;
+        }
+
+        /// <summary>The run stopped for a radiant in the given card (0 upper, 1 lower), with a picture for your phone.</summary>
+        static bool StoppedFor(Played p, int slot)
+        {
+            return p.Result.RadiantFound && p.Result.RadiantPlace.Contains(slot == 0 ? "upper card" : "lower card") &&
+                   p.Result.Screenshot != null && p.Result.Screenshot.Length > 0;
+        }
+
+        static string Card(int slot)
+        {
+            return slot == 0 ? "upper card (left one)" : "lower card (right one)";
+        }
+
+        // ---------------------------------------------------------------- pictures
+
+        /// <summary>A picture from the folder, at 1025 px high like the game window, or null if it isn't there.</summary>
+        static Bitmap Load(string dir, string name)
+        {
+            string file = Path.Combine(dir, name);
+            if (!File.Exists(file)) return null;
+            using (var raw = new Bitmap(file))
+            {
+                if (raw.Height == H) return new Bitmap(raw);
+                int width = (int)Math.Round(raw.Width * (double)H / raw.Height);
+                var b = new Bitmap(width, H, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(b))
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.DrawImage(raw, new Rectangle(0, 0, width, H));
+                }
+                return b;
+            }
+        }
+
+        /// <summary>Where the owner's own radiant, Minoking, has its gold name ("✦ Minoking Lvl 30") in these 2v2 pictures.</summary>
+        static readonly Rectangle MinokingName = new Rectangle(150, 42, 154, 30);
+
+        /// <summary>A copy with Minoking's real gold name copied over a wild Lumit's name, as a radiant's would show.</summary>
+        static Bitmap Gild(Bitmap source, Rectangle box)
+        {
+            var b = new Bitmap(source);
+            using (Graphics g = Graphics.FromImage(b))
+            using (Bitmap name = source.Clone(MinokingName, PixelFormat.Format32bppArgb))
+                g.DrawImage(name, new Rectangle(box.X, box.Y, Math.Min(box.Width, name.Width), Math.Min(box.Height, name.Height)),
+                            new Rectangle(0, 0, Math.Min(box.Width, name.Width), Math.Min(box.Height, name.Height)), GraphicsUnit.Pixel);
+            return b;
+        }
+
+        /// <summary>A 2v2 picture with a 1v1 picture's fight menu over its bottom, lit for your turn (the menus are laid out alike).</summary>
+        static Bitmap WithMenu(Bitmap duo, Bitmap menu)
+        {
+            var b = new Bitmap(W, H, PixelFormat.Format32bppArgb);
+            using (Graphics g = Graphics.FromImage(b))
+            {
+                g.DrawImage(duo, new Rectangle(0, 0, W, H));
+                var part = new Rectangle(0, 790, W, 235);
+                g.DrawImage(menu, part, part, GraphicsUnit.Pixel);
+            }
+            return b;
+        }
+
+        /// <summary>A copy with an HP bar painted empty.</summary>
+        static Bitmap EmptyBar(Bitmap source, Rectangle bar)
+        {
+            var b = new Bitmap(source);
+            using (Graphics g = Graphics.FromImage(b))
+            using (var dark = new SolidBrush(Color.FromArgb(30, 30, 35)))
+                g.FillRectangle(dark, bar);
+            return b;
+        }
+
+        // ---------------------------------------------------------------- the spots, on pictures
+
+        /// <summary>
+        /// The PC's 2v2 spots on pictures of the owner's game. Each 2v2 must be seen as one, both names read, and either name turned
+        /// gold found; no 1v1 may look like a 2v2. Also the Alerts window's Test now.
+        /// </summary>
+        static void Spots(string dir)
+        {
+            Console.WriteLine("== The PC's 2v2 spots, on pictures of the game");
+            string[][] duos =
+            {
+                new[] { "duo-target-lithorse.png", "Lithorse", "Lithorse", "120" },
+                new[] { "duo-turn-bonwing.png", "Bonwing", "Musingens", "133" },
+                new[] { "duo-start-gryphair.png", "Gryphair", "Bonwing", "133" },
+            };
+            foreach (string[] d in duos)
+            {
+                Bitmap b = Load(dir, d[0]);
+                if (b == null)
+                {
+                    Check(false, d[0] + " is missing");
+                    continue;
+                }
+                using (b)
+                {
+                    Dictionary<string, Rectangle> s = CatchSpots.Resolve(b.Size, null);
+                    Func<Bitmap, string, double> fill = (p, key) => CatchSpots.DuoBar(p, s, key);
+                    Func<Bitmap, string, double> gold = (p, key) => GoldText.Percent(p, s[key]);
+                    Func<string, string> name = key =>
+                    {
+                        using (Bitmap c = b.Clone(s[key], PixelFormat.Format32bppArgb)) return LumitNames.Read(c) ?? "";
+                    };
+                    double lead = fill(b, CatchSpots.Lead2Bar), partner = fill(b, CatchSpots.Partner2Bar);
+                    double left = fill(b, CatchSpots.Enemy1Bar), right = fill(b, CatchSpots.Enemy2Bar);
+                    string upper = name(CatchSpots.Enemy1Card), lower = name(CatchSpots.Enemy2Card);
+                    Console.WriteLine(string.Format("      {0}: bars lead {1:0.00}, second {2:0.00}, left {3:0.00}, right {4:0.00}; names \"{5}\", \"{6}\"; gold {7:0.0}%, {8:0.0}%",
+                        d[0], lead, partner, left, right, upper, lower, gold(b, CatchSpots.Enemy1Card), gold(b, CatchSpots.Enemy2Card)));
+                    Check(CatchSpots.DuoShowing(b, s) && left > 0.9 && right > 0.9 && partner > 0.9, d[0] + ": seen as a 2v2, both wild Lumits' bars full");
+                    Check(Math.Abs(lead - int.Parse(d[3]) / 181.0) < 0.04, d[0] + ": your lead's bar reads " + d[3] + " of 181 HP (" + Math.Round(lead * 181) + ")");
+                    Check(LumitNames.Similar(upper, d[1]) && LumitNames.Similar(lower, d[2]), d[0] + ": names read as " + d[1] + " and " + d[2]);
+                    Check(gold(b, CatchSpots.Enemy1Card) < 2 && gold(b, CatchSpots.Enemy2Card) < 2, d[0] + ": no gold in either wild name, with your own radiant's gold name and yellow portraits on screen");
+                    using (Bitmap g = Gild(b, s[CatchSpots.Enemy1Card]))
+                        Check(gold(g, CatchSpots.Enemy1Card) >= 4 && gold(g, CatchSpots.Enemy2Card) < 2, d[0] + ": the upper name turned gold is found (" + gold(g, CatchSpots.Enemy1Card).ToString("0.0") + "%)");
+                    using (Bitmap g = Gild(b, s[CatchSpots.Enemy2Card]))
+                        Check(gold(g, CatchSpots.Enemy2Card) >= 4 && gold(g, CatchSpots.Enemy1Card) < 2, d[0] + ": the lower name turned gold is found (" + gold(g, CatchSpots.Enemy2Card).ToString("0.0") + "%)");
+
+                    // The Alerts window's Test now, which used to read only the 1v1 name area (empty in a 2v2).
+                    bool radiant;
+                    Bitmap picture;
+                    string shown = AlertDialog.DescribeDuo(b, null, 2, out radiant, out picture);
+                    Console.WriteLine("      Test now: " + (shown ?? "(no 2v2)").Replace("\n", " | "));
+                    Check(shown != null && !radiant && picture != null && shown.Contains(d[1]) && shown.Contains(d[2]), d[0] + ": Test now shows both names, no radiant");
+                    if (picture != null) picture.Dispose();
+                    using (Bitmap g = Gild(b, s[CatchSpots.Enemy2Card]))
+                    {
+                        shown = AlertDialog.DescribeDuo(g, null, 2, out radiant, out picture);
+                        if (picture != null) picture.Dispose();
+                    }
+                    Console.WriteLine("      Test now, lower name gold: " + (shown ?? "(no 2v2)").Replace("\n", " | "));
+                    Check(shown != null && radiant && shown.Split('\n')[1].Contains("RADIANT") && !shown.Split('\n')[0].Contains("RADIANT"),
+                          d[0] + ": Test now marks the lower one as the radiant");
+                }
+            }
+            foreach (string one in new[] { "radiant.jpg", "game-turn-lowmp.png", "game-caught-sdoodo.png", "game-fainted-choice.png", "moomootaur.jpg", "tzik.jpg", "creebew.jpg", "coalython.jpg" })
+            {
+                Bitmap b = Load(dir, one);
+                if (b == null) continue;
+                using (b)
+                {
+                    Dictionary<string, Rectangle> s = CatchSpots.Resolve(b.Size, null);
+                    string bars = string.Join(", ", new[] { CatchSpots.Lead2Bar, CatchSpots.Partner2Bar, CatchSpots.Enemy1Bar, CatchSpots.Enemy2Bar }
+                        .Select(k => ScreenText.BarFill(b, s[k], ScreenText.IsRed).ToString("0.00") + "/" + CatchSpots.DuoBar(b, s, k).ToString("0.00")));
+                    Check(!CatchSpots.DuoShowing(b, s), one + " (a 1v1) isn't taken for a 2v2 (2v2 bars, any red / from the left: " + bars + ")");
+                    bool radiant;
+                    Bitmap picture;
+                    Check(AlertDialog.DescribeDuo(b, null, 2, out radiant, out picture) == null, one + ": Test now reads the name area, as for any 1v1");
+                }
+            }
+
+            // The 1v1 name area, which the radiant check reads in a 1v1, misses both of a 2v2's names: 2v2s need their own check.
+            Dictionary<string, Rectangle> pc = CatchSpots.Resolve(new Size(W, H), null);
+            Rectangle oneName = GoldText.LumitsNameArea;
+            Func<string, double> covered = key =>
+            {
+                Rectangle card = pc[key], both = Rectangle.Intersect(oneName, card);
+                return both.Width * both.Height / (double)(card.Width * card.Height);
+            };
+            double upperCovered = covered(CatchSpots.Enemy1Card), lowerCovered = covered(CatchSpots.Enemy2Card);
+            Check(upperCovered < 0.05 && lowerCovered < 0.05, "The 1v1 name area covers " + Math.Round(upperCovered * 100) + "% of the upper 2v2 name card and " +
+                  Math.Round(lowerCovered * 100) + "% of the lower one, so 2v2s are checked by their own spots");
         }
 
         [STAThread]
         static int Main(string[] args)
         {
             Native.EnableDpiAwareness();
+            if (args.Length < 1)
+            {
+                Console.WriteLine("DuoTest folderOfPcPictures   (tests\\pictures\\pc)");
+                return 2;
+            }
+            string dir = args[0];
             tempDir = Path.Combine(Path.GetTempPath(), "lumits-duo-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDir);
-            string dir = args[0];
-            leadMenu = Load(dir, "114501");
-            partnerMenu = Load(dir, "114542");
-            attackTarget = Load(dir, "114523");
-            captureTarget = Load(dir, "114546");
-            waiting = Load(dir, "114602");
-            caughtA = Load(dir, "114713");
-            caughtB = Load(dir, "114730");
-            victory = Load(dir, "114738");
-            map = Load(dir, "113756");
             try
             {
-                var counter = new LumitCounter(Path.Combine(tempDir, "lumits.txt"));
+                Spots(dir);
 
-                Console.WriteLine("== Neither ticked");
-                Played first = Play(counter, g => { });
-                Console.WriteLine("      Lead: " + string.Join(", ", first.Game.Lead) + "; second: " + string.Join(", ", first.Game.Partner));
-                Console.WriteLine("      Names read off the cards: " + string.Join(", ", counter.Entries().Select(e => e.Name + " (met " + e.Met + ")")));
-                Check(counter.Entries().Count == 2, "Both wild Lumits were counted by their names");
-                Check(first.Game.Lead.FirstOrDefault() == "move1>0" && first.Game.Partner.FirstOrDefault() == "move5>1", "The lead used Pyrecrest on the left one, the second Lumit its bottom-right move on the right one");
-                Check(first.Game.Odd.Count == 0, "No stray clicks: " + string.Join("; ", first.Game.Odd));
-
-                string piroink = counter.Entries().Select(e => e.Name).FirstOrDefault(n => n.StartsWith("Piro", StringComparison.OrdinalIgnoreCase));
-                string finny = counter.Entries().Select(e => e.Name).FirstOrDefault(n => n.StartsWith("Finn", StringComparison.OrdinalIgnoreCase));
-                Check(piroink != null && finny != null, "The names read were Piroink and Finny");
-                if (piroink == null || finny == null) return 1;
-
-                Console.WriteLine("\n== Both ticked, no keep rules");
-                counter.SetCatch(piroink, true);
-                counter.SetCatch(finny, true);
-                int kills = 0, kept = 0, caught = 0, odd = 0, stops = 0, ignored = 0;
-                bool leadLeft = true, partnerRight = true;
-                for (int i = 0; i < 8; i++)
+                lit = Load(dir, "radiant.jpg");
+                Bitmap normal = Load(dir, "game-turn-lowmp.png");
+                string[] names = { "duo-turn-bonwing.png", "duo-target-lithorse.png", "duo-start-gryphair.png" };
+                var duos = new List<Bitmap>();
+                foreach (string n in names)
                 {
-                    Played p = Play(counter, g => { g.Random = new Random(100 + i); });
-                    kills += p.Game.Wild.Count(w => w.Killed);
-                    caught += p.Game.Wild.Count(w => w.Caught);
-                    kept += p.Game.Keeps;
-                    odd += p.Game.Odd.Count;
-                    ignored += p.Game.IgnoredClicks;
-                    if (p.Result.Problem != null) stops++;
-                    if (p.Game.Lead.Count > 0 && !p.Game.Lead[0].StartsWith("move2>0")) leadLeft = false;
-                    if (p.Game.Partner.Count > 0 && !p.Game.Partner[0].StartsWith("move2>1")) partnerRight = false;
-                    if (i == 0) foreach (string t in p.Game.Trace) Console.WriteLine("      " + t);
-                    if (p.Result.Problem != null && stops == 1)
+                    Bitmap raw = Load(dir, n);
+                    if (raw != null) duos.Add(WithMenu(raw, lit));
+                }
+                if (lit == null || normal == null || duos.Count < names.Length)
+                {
+                    Check(false, "radiant.jpg, game-turn-lowmp.png and the three duo-*.png pictures must be in " + dir);
+                    return 1;
+                }
+                Dictionary<string, Rectangle> pc = CatchSpots.Resolve(new Size(W, H), null);
+                string[] cards = { CatchSpots.Enemy1Card, CatchSpots.Enemy2Card };
+                Bitmap bonwing = duos[0];
+
+                Console.WriteLine("\n== Radiants only, no radiant: two 2v2s in a row");
+                Played runs = Play(Mode.RadiantsOnly, bonwing, new[] { duos[2] });
+                Console.WriteLine("      " + string.Join(", ", runs.Game.Trace) + "; app: " + string.Join(" / ", runs.Activity.Where(a => a.Contains("Run"))));
+                Check(runs.Game.Runs == 2 && runs.Game.Attacks == 0 && runs.Game.Odd.Count == 0 && runs.Result.Problem == null,
+                      "Each 2v2 got the Run step, and nothing else was clicked: " + string.Join("; ", runs.Game.Odd));
+                Check(runs.Counter.Total == 4, "Both wild Lumits of each 2v2 were counted (" + runs.Counter.Total + " of 4)");
+                Check(runs.Activity.Any(a => a.Contains("no radiant in this 2v2")), "The status line says it ran from a 2v2 with no radiant");
+
+                Console.WriteLine("\n== Radiants only, a radiant in a 2v2");
+                for (int d = 0; d < duos.Count; d++)
+                {
+                    for (int slot = 0; slot < 2; slot++)
                     {
-                        foreach (string t in p.Game.Trace) Console.WriteLine("      game: " + t);
-                        foreach (string a in p.Activity) Console.WriteLine("      app:  " + a);
-                        Console.WriteLine("      game lists: lead " + string.Join(", ", p.Game.Lead) + "; second " + string.Join(", ", p.Game.Partner));
+                        Played p = Play(Mode.RadiantsOnly, Gild(duos[d], pc[cards[slot]]));
+                        Console.WriteLine("      " + names[d] + ", " + Card(slot) + ": " + p.Result.Problem);
+                        Check(StoppedFor(p, slot) && Untouched(p), names[d] + ", gold " + Card(slot) + ": the run stops, nothing clicked, saying which one, with a picture");
+                        if (d == 0 && slot == 1)
+                            Check(p.Counter.Entries().Any(e => e.Radiants > 0), "The radiant is in the counts as a radiant");
                     }
                 }
-                Check(leadLeft && partnerRight, "The lead started with Heat Siphon on the left one, the second Lumit with its top-right move on the right one");
-                Check(kept == caught, "Every caught Lumit's screen was read and kept: " + kept + " of " + caught);
-                Check(odd == 0 && stops == 0, "No stray clicks and no stops");
-                Console.WriteLine("      " + kills + " of 16 died; " + ignored + " clicks on a target were ignored on purpose and recovered from.");
-                string log = File.Exists(Path.Combine(tempDir, "catches.txt")) ? File.ReadAllText(Path.Combine(tempDir, "catches.txt")) : "";
-                foreach (string l in log.Split('\n').Take(4)) if (l.Trim().Length > 0) Console.WriteLine("      Log: " + l.Trim());
-                int known = log.Split('\n').Count(l => l.Contains("  " + piroink + " ") || l.Contains("  " + finny + " "));
-                Check(known == kept, "Each catch in the log is put down to the right Lumit by its caught name: " + known + " of " + kept);
+                Played both = Play(Mode.RadiantsOnly, Gild(Gild(bonwing, pc[cards[0]]), pc[cards[1]]));
+                Console.WriteLine("      both gold: " + both.Result.Problem);
+                Check(both.Result.RadiantFound && Untouched(both), "Both names gold: the run stops, nothing clicked");
+                Played catchOff = Play(Mode.RadiantsOnly, Gild(bonwing, pc[cards[1]]), catchRadiants: false);
+                Check(StoppedFor(catchOff, 1) && Untouched(catchOff), "Catch radiants off: the same");
 
-                Console.WriteLine("\n== Only Finny ticked, with Heavy Strike as its attack");
-                counter.SetCatch(piroink, false);
-                counter.SetAttack(finny, 4);
-                Played heavy = Play(counter, g => { g.Random = new Random(7); });
-                Console.WriteLine("      Lead: " + string.Join(", ", heavy.Game.Lead) + "; second: " + string.Join(", ", heavy.Game.Partner));
-                Check(heavy.Game.Lead.FirstOrDefault() == "move4>1", "The lead used Heavy Strike on Finny, on the right");
-                Check(heavy.Game.Partner.FirstOrDefault() == "move5>0", "The second Lumit used its bottom-right move on Piroink");
+                Console.WriteLine("\n== Catching on (not radiants only), a radiant in a 2v2");
+                for (int slot = 0; slot < 2; slot++)
+                {
+                    Played p = Play(Mode.Catching, Gild(bonwing, pc[cards[slot]]));
+                    Console.WriteLine("      " + Card(slot) + ": " + p.Result.Problem);
+                    Check(StoppedFor(p, slot) && Untouched(p), "Gold " + Card(slot) + ": the run stops before anything is clicked (2v2 catching isn't checked on the PC yet)");
+                }
 
-                Console.WriteLine("\n== Radiants only, both ticked: two 2v2s in a row, no radiant");
-                counter.SetCatch(piroink, true);
-                int metBefore = counter.Total;
-                var clock = Stopwatch.StartNew();
-                Played run = Play(counter, g => { g.FightsLeft = 2; }, radiantsOnly: true);
-                Console.WriteLine("      " + string.Join(", ", run.Game.Trace) + " in " + clock.ElapsedMilliseconds + " ms; app: " + string.Join(" / ", run.Activity.Where(a => a.Contains("Run"))));
-                Check(run.Game.Runs == 2 && run.Game.Lead.Count + run.Game.Partner.Count == 0 && run.Game.Odd.Count == 0, "Each 2v2 got the Run step, with no move, Capture or stray click");
-                Check(run.Result.Problem == null && run.Game.Keeps == 0, "No stop, and nothing caught");
-                Check(counter.Total - metBefore == 4, "Both wild Lumits of each 2v2 were counted (" + (counter.Total - metBefore) + " of 4)");
-                Check(run.Activity.Any(a => a.Contains("no radiant in this 2v2, so step 2 (Run)")), "The status line says why it ran");
+                Console.WriteLine("\n== Catching off: the radiant check just stops the run");
+                for (int slot = 0; slot < 2; slot++)
+                {
+                    Played p = Play(Mode.StopOnly, Gild(bonwing, pc[cards[slot]]));
+                    Console.WriteLine("      " + Card(slot) + ": " + p.Result.Problem);
+                    Check(StoppedFor(p, slot) && Untouched(p), "Gold " + Card(slot) + ": the run stops, nothing clicked, saying which one");
+                }
+                Played plain = Play(Mode.StopOnly, bonwing);
+                Console.WriteLine("      no radiant: " + string.Join(", ", plain.Game.Trace));
+                Check(plain.Game.Attacks == 1 && plain.Game.Odd.Count == 0 && plain.Result.Problem == null, "No radiant: the attack step is clicked as usual");
+                Check(plain.Counter.Total == 2, "Both wild Lumits were counted (" + plain.Counter.Total + " of 2)");
+
+                Console.WriteLine("\n== A wild Lumit's bar reads empty as the 2v2 starts, its name gold");
+                Bitmap faint = EmptyBar(Gild(bonwing, pc[cards[1]]), pc[CatchSpots.Enemy2Bar]);
+                foreach (Mode mode in new[] { Mode.RadiantsOnly, Mode.StopOnly })
+                {
+                    Played p = Play(mode, faint);
+                    Console.WriteLine("      " + mode + ": " + (p.Result.Problem ?? string.Join(", ", p.Game.Trace)));
+                    Check(StoppedFor(p, 1) && Untouched(p), mode + ": its name is still checked, and the run stops with nothing clicked");
+                }
+
+                Console.WriteLine("\n== 1v1s and 2v2s mixed (radiants only, catch radiants off)");
+                Played oneThenTwo = Play(Mode.RadiantsOnly, normal, new[] { Gild(bonwing, pc[cards[1]]) }, catchRadiants: false);
+                Console.WriteLine("      " + string.Join(", ", oneThenTwo.Game.Trace) + "; " + oneThenTwo.Result.Problem);
+                Check(oneThenTwo.Game.Runs == 1 && oneThenTwo.Game.Odd.Count == 0 && StoppedFor(oneThenTwo, 1),
+                      "A 1v1 run from, then a radiant in the next fight's 2v2: stopped, saying it's the lower card");
+                Played twoThenOne = Play(Mode.RadiantsOnly, bonwing, new[] { lit }, catchRadiants: false);
+                Console.WriteLine("      " + string.Join(", ", twoThenOne.Game.Trace) + "; " + twoThenOne.Result.Problem);
+                Check(twoThenOne.Game.Runs == 1 && twoThenOne.Game.Odd.Count == 0 && twoThenOne.Result.RadiantFound && twoThenOne.Result.RadiantPlace == "",
+                      "A 2v2 run from, then a radiant in a 1v1: stopped as a 1v1's radiant");
             }
             finally
             {

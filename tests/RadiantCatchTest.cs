@@ -48,8 +48,6 @@ namespace AutoClicker
             public readonly List<string> Trace = new List<string>();
             public readonly List<string> Other = new List<string>();
 
-            /// <summary>A PC 2v2 shown instead of the 1v1 fight, or null.</summary>
-            public Bitmap Duo;
             /// <summary>Radiants only: the Run button (bottom left), how many runs fail before one works, and runs made.</summary>
             public Rectangle RunArea;
             public int FailRuns, Runs, Fights = 1;
@@ -135,17 +133,9 @@ namespace AutoClicker
                             Bar(g, spots[CatchSpots.EnemyBar], Hp / MaxHp);
                             break;
                         default:
-                            if (Duo != null)
-                            {
-                                // A PC 2v2, bars and names as they were in the game.
-                                g.DrawImage(Duo, new Rectangle(0, 0, 1920, 1025));
-                            }
-                            else
-                            {
-                                g.DrawImageUnscaled(Radiant ? radiantPic : normalPic, 0, 0);
-                                Bar(g, spots[CatchSpots.EnemyBar], Hp / MaxHp);
-                                Bar(g, spots[CatchSpots.LeadBar], 0.9);
-                            }
+                            g.DrawImageUnscaled(Radiant ? radiantPic : normalPic, 0, 0);
+                            Bar(g, spots[CatchSpots.EnemyBar], Hp / MaxHp);
+                            Bar(g, spots[CatchSpots.LeadBar], 0.9);
                             if (State == Screen.Wait)
                             {
                                 // The menu is dark until your turn.
@@ -449,111 +439,6 @@ namespace AutoClicker
                     g.DrawImage(raw, new Rectangle(0, 0, width, 1025));
                 }
                 return b;
-            }
-        }
-
-        /// <summary>Where the owner's own radiant, Minoking, has its gold name ("✦ Minoking Lvl 30") in these 2v2 pictures.</summary>
-        static readonly Rectangle MinokingName = new Rectangle(150, 42, 154, 30);
-
-        /// <summary>A copy with Minoking's real gold name copied over a wild Lumit's name, as a radiant's would show.</summary>
-        static Bitmap Gild(Bitmap source, Rectangle box)
-        {
-            var b = new Bitmap(source);
-            using (Graphics g = Graphics.FromImage(b))
-            using (Bitmap name = source.Clone(MinokingName, PixelFormat.Format32bppArgb))
-                g.DrawImage(name, new Rectangle(box.X, box.Y, Math.Min(box.Width, name.Width), Math.Min(box.Height, name.Height)),
-                            new Rectangle(0, 0, Math.Min(box.Width, name.Width), Math.Min(box.Height, name.Height)), GraphicsUnit.Pixel);
-            return b;
-        }
-
-        /// <summary>A 2v2 picture with a 1v1 picture's fight menu over its bottom, lit for your turn (the menus are laid out alike).</summary>
-        static Bitmap WithMenu(Bitmap duo, Bitmap menu)
-        {
-            var b = new Bitmap(1920, 1025, PixelFormat.Format32bppArgb);
-            using (Graphics g = Graphics.FromImage(b))
-            {
-                g.DrawImage(duo, new Rectangle(0, 0, 1920, 1025));
-                var part = new Rectangle(0, 790, 1920, 235);
-                g.DrawImage(menu, part, part, GraphicsUnit.Pixel);
-            }
-            return b;
-        }
-
-        /// <summary>
-        /// The PC's 2v2 spots on pictures of the owner's game: two cards a side, one above the other. Each 2v2 must be seen
-        /// as one, both names read, and either name turned gold found; no 1v1 may look like a 2v2.
-        /// </summary>
-        static void DuoSpots(string dir)
-        {
-            Console.WriteLine("\n== The PC's 2v2 spots, on pictures of the game");
-            string[][] duos =
-            {
-                new[] { "duo-target-lithorse.png", "Lithorse", "Lithorse", "120" },
-                new[] { "duo-turn-bonwing.png", "Bonwing", "Musingens", "133" },
-                new[] { "duo-start-gryphair.png", "Gryphair", "Bonwing", "133" },
-            };
-            foreach (string[] d in duos)
-            {
-                Bitmap b = Load(dir, d[0]);
-                if (b == null)
-                {
-                    Check(false, d[0] + " is missing beside radiant.jpg");
-                    continue;
-                }
-                using (b)
-                {
-                    Dictionary<string, Rectangle> s = CatchSpots.Resolve(b.Size, null);
-                    Func<Bitmap, string, double> fill = (p, key) => CatchSpots.DuoBar(p, s, key);
-                    Func<Bitmap, string, double> gold = (p, key) => GoldText.Percent(p, s[key]);
-                    Func<string, string> name = key =>
-                    {
-                        using (Bitmap c = b.Clone(s[key], PixelFormat.Format32bppArgb)) return LumitNames.Read(c) ?? "";
-                    };
-                    double lead = fill(b, CatchSpots.Lead2Bar), partner = fill(b, CatchSpots.Partner2Bar);
-                    double left = fill(b, CatchSpots.Enemy1Bar), right = fill(b, CatchSpots.Enemy2Bar);
-                    string upper = name(CatchSpots.Enemy1Card), lower = name(CatchSpots.Enemy2Card);
-                    Console.WriteLine(string.Format("      {0}: bars lead {1:0.00}, second {2:0.00}, left {3:0.00}, right {4:0.00}; names \"{5}\", \"{6}\"; gold {7:0.0}%, {8:0.0}%",
-                        d[0], lead, partner, left, right, upper, lower, gold(b, CatchSpots.Enemy1Card), gold(b, CatchSpots.Enemy2Card)));
-                    Check(CatchSpots.DuoShowing(b, s) && left > 0.9 && right > 0.9 && partner > 0.9, d[0] + ": seen as a 2v2, both wild Lumits' bars full");
-                    Check(Math.Abs(lead - int.Parse(d[3]) / 181.0) < 0.04, d[0] + ": your lead's bar reads " + d[3] + " of 181 HP (" + Math.Round(lead * 181) + ")");
-                    Check(LumitNames.Similar(upper, d[1]) && LumitNames.Similar(lower, d[2]), d[0] + ": names read as " + d[1] + " and " + d[2]);
-                    Check(gold(b, CatchSpots.Enemy1Card) < 2 && gold(b, CatchSpots.Enemy2Card) < 2, d[0] + ": no gold in either wild name, with your own radiant's gold name and yellow portraits on screen");
-                    using (Bitmap g = Gild(b, s[CatchSpots.Enemy1Card]))
-                        Check(gold(g, CatchSpots.Enemy1Card) >= 4 && gold(g, CatchSpots.Enemy2Card) < 2, d[0] + ": the upper name turned gold is found (" + gold(g, CatchSpots.Enemy1Card).ToString("0.0") + "%)");
-                    using (Bitmap g = Gild(b, s[CatchSpots.Enemy2Card]))
-                        Check(gold(g, CatchSpots.Enemy2Card) >= 4 && gold(g, CatchSpots.Enemy1Card) < 2, d[0] + ": the lower name turned gold is found (" + gold(g, CatchSpots.Enemy2Card).ToString("0.0") + "%)");
-
-                    // The Alerts window's Test now, which used to read only the 1v1 name area (empty in a 2v2).
-                    bool radiant;
-                    Bitmap picture;
-                    string shown = AlertDialog.DescribeDuo(b, null, 2, out radiant, out picture);
-                    Console.WriteLine("      Test now: " + (shown ?? "(no 2v2)").Replace("\n", " | "));
-                    Check(shown != null && !radiant && picture != null && shown.Contains(d[1]) && shown.Contains(d[2]), d[0] + ": Test now shows both names, no radiant");
-                    if (picture != null) picture.Dispose();
-                    using (Bitmap g = Gild(b, s[CatchSpots.Enemy2Card]))
-                    {
-                        shown = AlertDialog.DescribeDuo(g, null, 2, out radiant, out picture);
-                        if (picture != null) picture.Dispose();
-                    }
-                    Console.WriteLine("      Test now, lower name gold: " + (shown ?? "(no 2v2)").Replace("\n", " | "));
-                    Check(shown != null && radiant && shown.Split('\n')[1].Contains("RADIANT") && !shown.Split('\n')[0].Contains("RADIANT"),
-                          d[0] + ": Test now marks the lower one as the radiant");
-                }
-            }
-            foreach (string one in new[] { "radiant.jpg", "game-turn-lowmp.png", "game-caught-sdoodo.png", "game-fainted-choice.png", "moomootaur.jpg", "tzik.jpg", "creebew.jpg", "coalython.jpg" })
-            {
-                Bitmap b = Load(dir, one);
-                if (b == null) continue;
-                using (b)
-                {
-                    Dictionary<string, Rectangle> s = CatchSpots.Resolve(b.Size, null);
-                    string bars = string.Join(", ", new[] { CatchSpots.Lead2Bar, CatchSpots.Partner2Bar, CatchSpots.Enemy1Bar, CatchSpots.Enemy2Bar }
-                        .Select(k => ScreenText.BarFill(b, s[k], ScreenText.IsRed).ToString("0.00") + "/" + CatchSpots.DuoBar(b, s, k).ToString("0.00")));
-                    Check(!CatchSpots.DuoShowing(b, s), one + " (a 1v1) isn't taken for a 2v2 (2v2 bars, any red / from the left: " + bars + ")");
-                    bool radiant;
-                    Bitmap picture;
-                    Check(AlertDialog.DescribeDuo(b, null, 2, out radiant, out picture) == null, one + ": Test now reads the name area, as for any 1v1");
-                }
             }
         }
 
@@ -874,35 +759,7 @@ namespace AutoClicker
                 StuckOnAScreen();
 
                 string dir = Path.GetDirectoryName(Path.GetFullPath(args[0]));
-                DuoSpots(dir);
                 NightLight(dir);
-
-                Console.WriteLine("\n== A PC 2v2 (Bonwing and Musingens), radiants only");
-                Bitmap bonwing = Load(dir, "duo-turn-bonwing.png");
-                if (bonwing == null) Check(false, "duo-turn-bonwing.png is missing beside radiant.jpg");
-                else
-                {
-                    Bitmap duoTurn = WithMenu(bonwing, radiantPic);
-                    Dictionary<string, Rectangle> pc = CatchSpots.Resolve(new Size(1920, 1025), null);
-                    Played duoRun = Play(g => { g.Duo = duoTurn; g.Radiant = false; }, radiantsOnly, runStep: true);
-                    Console.WriteLine("      " + string.Join(", ", duoRun.Game.Trace) + "; app: " + string.Join(" / ", duoRun.Activity.Where(a => a.Contains("Run"))));
-                    Check(duoRun.Game.Runs == 1 && duoRun.Game.Strikes + duoRun.Game.Captures + duoRun.Game.AttackClicks == 0 && duoRun.Game.Other.Count == 0 && duoRun.Result.Problem == null,
-                          "No radiant: Run, and nothing else clicked: " + string.Join("; ", duoRun.Game.Other));
-                    Check(duoRun.Activity.Any(a => a.Contains("no radiant in this 2v2")), "It was seen as a 2v2");
-                    Check(duoRun.Counter.Total == 2, "Both wild Lumits were counted (" + duoRun.Counter.Total + " of 2)");
-                    foreach (int slot in new[] { 0, 1 })
-                    {
-                        Bitmap gilded = Gild(duoTurn, pc[slot == 0 ? CatchSpots.Enemy1Card : CatchSpots.Enemy2Card]);
-                        Played p = Play(g => { g.Duo = gilded; g.Radiant = true; }, radiantsOnly, runStep: true);
-                        Console.WriteLine("      " + p.Result.Problem);
-                        Check(p.Result.RadiantFound && p.Game.Trace.Count == 0 && p.Game.Runs == 0 && p.Game.Other.Count == 0 && p.Result.RadiantPlace.Contains(slot == 0 ? "left" : "right"),
-                              "A radiant " + (slot == 0 ? "upper" : "lower") + " card: the run stops with nothing clicked, saying it's " + (slot == 0 ? "the left one" : "the right one"));
-                    }
-                    Bitmap lowerGold = Gild(duoTurn, pc[CatchSpots.Enemy2Card]);
-                    Played fighting = Play(g => { g.Duo = lowerGold; g.Radiant = true; });
-                    Check(fighting.Result.RadiantFound && fighting.Game.Trace.Count == 0 && fighting.Game.AttackClicks == 0 && fighting.Game.Other.Count == 0,
-                          "Without radiants only too, a radiant in a PC 2v2 stops the run before anything is clicked");
-                }
 
                 Console.WriteLine("\n== The window's text fits");
                 using (var font = new Font("Segoe UI", 9F))

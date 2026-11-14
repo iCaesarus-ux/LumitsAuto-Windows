@@ -211,6 +211,11 @@ namespace AutoClicker
         public LumitCounter Counter;
         /// <summary>Catching and healing; null = off.</summary>
         public CatchOptions Catch;
+        /// <summary>
+        /// Where a 2v2's bars and wild names are in the game window, so the radiant check sees 2v2s even with catching off
+        /// (the 1v1 name area misses both of a PC 2v2's name cards); null without a game window.
+        /// </summary>
+        public Dictionary<string, Rectangle> DuoSpots;
     }
 
     public class RunResult

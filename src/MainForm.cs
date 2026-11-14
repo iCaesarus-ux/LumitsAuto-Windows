@@ -1013,7 +1013,8 @@ namespace AutoClicker
                 RadiantCheck = alert,
                 AlertGoldPercent = settings.AlertGoldPercent,
                 Counter = count ? counter : null,
-                Catch = catching
+                Catch = catching,
+                DuoSpots = space.Window != null ? CatchSpots.Resolve(space.Window.ClientSize, settings.CatchSpots) : null
             };
             counter.StartRun();
             if (!engine.Start(options)) return;

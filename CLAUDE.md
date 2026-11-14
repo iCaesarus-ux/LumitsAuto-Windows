@@ -19,7 +19,7 @@ says how it's used. Split from LumitsAuto, which also holds the Android app (not
 - The owner calls the list of picked clicks the app's "steps". While their `AutoClicker.exe` runs it's locked and a
   second copy won't start (single-instance mutex): build to another folder with build.cmd's compile line.
 
-## Where things stand (14 November 2026)
+## Where things stand (15 November 2026)
 
 - **Radiants only** (`CatchOptions.RadiantsOnly`, ticked in Catching…; made in LumitsAuto after the split and brought
   over): the owner makes the radiant check's step (`NameStep`) the Run button (the boot, bottom left, about 237, 939
@@ -35,6 +35,15 @@ says how it's used. Split from LumitsAuto, which also holds the Android app (not
   in 1v1 pictures the lead's spot catches the 1v1 card's red frame and the lower wild spot a red radiant's portrait.
   A radiant in a 2v2 stops the run untouched, naming which one (`CatchOptions.CatchDuoRadiants`, off): 2v2 target
   clicks and the second Lumit's moves haven't been checked on the PC. Pictures: `tests/pictures/pc/duo-*.png`.
+- **2v2 radiant checks without catching, and the PC 2v2 test (15 November):** the owner no longer uses the phone
+  app, so `tests/DuoTest.cs` (`run-duo-test.cmd`, about 10 s) now uses only PC pictures and checks radiants in 2v2s;
+  the phone screenshots (`tests/pictures/forest`) and the phone 2v2 catching checks are gone, and the PC 2v2 parts of
+  the radiant test moved there. It found that with catching off (no `CatchOptions`) a 2v2 was never seen: only the
+  1v1 name area was read, which covers 0% and 3% of the 2v2 name cards. Now `RunOptions.DuoSpots` (from MainForm
+  whenever there's a game window) lets `CheckEnemy` see a 2v2 without catching (`CheckDuoNames`: both names checked
+  and counted, a radiant stops the run untouched, otherwise the step is clicked). `StartDuo` no longer skips the gold
+  check of a card whose bar reads empty. Still assumed: a 2v2 needs both your bars, so one with your second Lumit
+  fainted would be taken for a 1v1 (not seen whether the game makes such 2v2s).
 - **Night (14 November, measured in the owner's game with `PrintWindow`, no input):** the game multiplies its
   world's colours at night (no offset), not its interface: fitted pixel by pixel on the same standing stone (red
   0.40, green 0.55, blue 0.79) and rock (0.38, 0.49, 0.73) on `tests/pictures/pc/map-day.png` and `map-night.png`.

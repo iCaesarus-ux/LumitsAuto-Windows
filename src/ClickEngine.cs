@@ -78,6 +78,7 @@ namespace AutoClicker
         bool radiantCaught;
         readonly RadiantStrikes strikes = new RadiantStrikes();
         int duoCycle;          // the cycle whose fight is a 2v2
+        int duoCheckedCycle;   // catching off: the cycle whose 2v2 had its names checked for a radiant
         readonly Foe[] foes = new Foe[2];
         string duoLead, duoPartner; // your two Lumits' names, from "Choose an action for …"
         bool standInPending;   // a Lumit fainted in a 2v2, so the next new name choosing is a stand-in's
@@ -160,7 +161,7 @@ namespace AutoClicker
             radiantName = "";
             radiantCaught = false;
             strikes.Clear();
-            duoCycle = 0;
+            duoCycle = duoCheckedCycle = 0;
             duoLead = duoPartner = null;
             standInPending = false;
             caughtOrder.Clear();
@@ -317,13 +318,14 @@ namespace AutoClicker
         /// </summary>
         void CheckEnemy(int i, bool aboutToClick)
         {
-            if (i != o.NameStep || radiantCycle == cycle || duoCycle == cycle) return;
+            if (i != o.NameStep || radiantCycle == cycle || duoCycle == cycle || duoCheckedCycle == cycle) return;
             // Radiants only: running can't be undone, so the fight's menu has to be up before the names are judged. By
             // then the name cards have surely faded in, and a 2v2's bars show.
             if (RadiantsOnly && window != null && countedCycle != cycle) WaitUntil(() => YourTurnMenuLit(CurrentFrame()), 5000);
-            if (o.Catch != null && window != null && countedCycle != cycle && IsDuo(CurrentFrame()))
+            if (window != null && DuoSpotsNow != null && countedCycle != cycle && IsDuo(CurrentFrame()))
             {
-                StartDuo();
+                if (o.Catch != null) StartDuo();
+                else CheckDuoNames();
                 return;
             }
             bool count = o.Counter != null && countedCycle != cycle;
@@ -583,12 +585,62 @@ namespace AutoClicker
         /// <summary>A 2v2 fight: both your Lumits' HP bars on their small cards, and a wild one's at least.</summary>
         bool IsDuo(Bitmap shot)
         {
-            return CatchSpots.DuoShowing(shot, o.Catch.Spots);
+            return CatchSpots.DuoShowing(shot, DuoSpotsNow);
+        }
+
+        /// <summary>A 2v2's spots: catching's, or the run's own for the radiant check when catching is off; null without a game window.</summary>
+        Dictionary<string, Rectangle> DuoSpotsNow
+        {
+            get { return o.Catch != null ? o.Catch.Spots : o.DuoSpots; }
         }
 
         double DuoBar(Bitmap shot, string key)
         {
-            return CatchSpots.DuoBar(shot, o.Catch.Spots, key);
+            return CatchSpots.DuoBar(shot, DuoSpotsNow, key);
+        }
+
+        /// <summary>A wild Lumit's name card in a 2v2 (slot 0 the upper card, the left one on the field): its name, and how gold it is.</summary>
+        string DuoCard(Bitmap shot, int slot, out double gold)
+        {
+            Rectangle card = Rectangle.Intersect(DuoSpotsNow[slot == 0 ? CatchSpots.Enemy1Card : CatchSpots.Enemy2Card], new Rectangle(Point.Empty, shot.Size));
+            gold = 0;
+            if (card.Width <= 0 || card.Height <= 0) return "";
+            using (Bitmap c = shot.Clone(card, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
+            {
+                gold = GoldText.Percent(c, new Rectangle(Point.Empty, c.Size));
+                return LumitNames.Read(c) ?? "";
+            }
+        }
+
+        /// <summary>
+        /// A 2v2 with catching off: both wild names are checked for gold and counted, and the step is clicked as it is. A radiant
+        /// stops the run before anything is clicked.
+        /// </summary>
+        void CheckDuoNames()
+        {
+            duoCheckedCycle = countedCycle = cycle;
+            Bitmap shot = CurrentFrame();
+            var names = new string[2];
+            var radiant = new bool[2];
+            for (int slot = 0; slot < 2; slot++)
+            {
+                double gold;
+                names[slot] = DuoCard(shot, slot, out gold);
+                radiant[slot] = o.RadiantCheck && gold >= o.AlertGoldPercent;
+                bool there = DuoBar(shot, slot == 0 ? CatchSpots.Enemy1Bar : CatchSpots.Enemy2Bar) > 0.01;
+                if (o.Counter != null && (there || radiant[slot])) names[slot] = o.Counter.Record(names[slot], radiant[slot]);
+            }
+            for (int slot = 0; slot < 2; slot++)
+            {
+                if (!radiant[slot]) continue;
+                throw new StopRun("a radiant appeared (gold name) " + Place(slot) + ", nothing was clicked")
+                {
+                    Radiant = true,
+                    RadiantName = names[slot],
+                    RadiantPlace = Place(slot),
+                    Screenshot = Evidence()
+                };
+            }
         }
 
         /// <summary>A 2v2 has begun: both wild Lumits are counted and checked for radiants.</summary>
@@ -603,20 +655,15 @@ namespace AutoClicker
             {
                 var f = foes[i] = new Foe { Slot = i };
                 f.Hp = DuoBar(shot, i == 0 ? CatchSpots.Enemy1Bar : CatchSpots.Enemy2Bar);
-                if (f.Hp <= 0.01)
+                double gold;
+                string name = DuoCard(shot, i, out gold);
+                f.Radiant = o.RadiantCheck && gold >= o.AlertGoldPercent;
+                // A bar read as empty at the start doesn't skip the gold check: better an unneeded stop than a lost radiant.
+                if (f.Hp <= 0.01 && !f.Radiant)
                 {
                     f.Gone = true;
                     continue;
                 }
-                Rectangle card = Rectangle.Intersect(Spot(i == 0 ? CatchSpots.Enemy1Card : CatchSpots.Enemy2Card), new Rectangle(Point.Empty, shot.Size));
-                string name;
-                double gold;
-                using (Bitmap c = shot.Clone(card, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
-                {
-                    gold = GoldText.Percent(c, new Rectangle(Point.Empty, c.Size));
-                    name = LumitNames.Read(c) ?? "";
-                }
-                f.Radiant = o.RadiantCheck && gold >= o.AlertGoldPercent;
                 f.Entry = o.Counter != null ? o.Counter.Record(name, f.Radiant) : name;
                 LumitCounter.Entry rules = o.Counter != null ? o.Counter.Lookup(f.Entry) : null;
                 f.Catch = o.Catch.CatchOn && !o.Catch.RadiantsOnly && rules != null && rules.Catch;
@@ -647,7 +694,12 @@ namespace AutoClicker
         /// <summary>Which wild Lumit of the 2v2 it is, as seen on the field (on the PC, the left one's card is the upper one).</summary>
         static string Place(Foe f)
         {
-            return f.Slot == 0 ? "in a 2v2, the left one (upper card)" : "in a 2v2, the right one (lower card)";
+            return Place(f.Slot);
+        }
+
+        static string Place(int slot)
+        {
+            return slot == 0 ? "in a 2v2, the left one (upper card)" : "in a 2v2, the right one (lower card)";
         }
 
         /// <summary>
