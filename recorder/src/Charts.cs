@@ -49,8 +49,9 @@ namespace ClickRecorder
 
         /// <param name="width">Bin width in ms; 0 picks one from how spread out the gaps are.</param>
         /// <param name="upTo">
-        /// Last ms shown; 0 picks it: up to where 99.5% of the gaps are, but no further than four times the middle half's
-        /// spread past it, so a few long pauses (between screens, say) don't squash the rest. Those count as off the scale.
+        /// Last ms shown; 0 picks it: from the shortest gap to the longest, except gaps further than four times the middle
+        /// half's spread beyond it, so a few long pauses (between screens, say) don't squash the rest. Those count as off
+        /// the scale.
         /// </param>
         public static Bins For(IEnumerable<double[]> sets, double width, double upTo)
         {
@@ -63,8 +64,9 @@ namespace ClickRecorder
             // Half the Freedman–Diaconis width (the middle half's spread over the cube root of the count), rounded to
             // 1, 2 or 5: a little finer than usual, since the shape of the peak is what's being looked at.
             if (w <= 0) w = NiceUp(Math.Max(1, iqr / Math.Pow(all.Length, 1 / 3.0)));
-            double low = Math.Max(Summary.Percentile(all, 0.005), q1 - 4 * iqr);
-            double high = upTo > 0 ? upTo : Math.Min(Summary.Percentile(all, 0.995), q3 + 4 * iqr);
+            // Only real outliers are left off: a percentile cut would drop the shortest or longest of a few gaps.
+            double low = Math.Max(all[0], q1 - 4 * iqr);
+            double high = upTo > 0 ? upTo : Math.Min(all[all.Length - 1], q3 + 4 * iqr);
             while (true)
             {
                 double from = Math.Max(0, Math.Floor(low / w) * w);
