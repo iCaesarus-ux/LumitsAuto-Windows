@@ -22,7 +22,7 @@ namespace AutoClicker
         const int BoxW = 150, BoxH = 148;
         const int MinSide = 34, MaxSide = 130, MinArea = 350;
         const int Rays = 36;
-        const int BlurRadius = 8, EdgeMin = 20, Grow = 2, MaxHole = 1200;
+        const int BlurRadius = 8, EdgeMin = 20, Grow = 2, MaxHole = 6000;
 
         /// <summary>How unlike the reference the best candidate may be; above this it gives up rather than guess.</summary>
         const double MaxDistance = 0.48;
@@ -110,13 +110,40 @@ namespace AutoClicker
 
             box = FindBox(px, w, h, (int)Math.Round(BoxW * k), (int)Math.Round(BoxH * k));
             if (box.IsEmpty) { trace = "no box found"; return null; }
-            // Clear the box's own white border from the mask: it would otherwise be the reference itself, or bridge to it.
+
+            // Clear the box's own white border: it would otherwise be the reference itself, or bridge to it.
             for (int y = Math.Max(0, box.Y - 4); y < Math.Min(h, box.Bottom + 4); y++)
                 for (int x = Math.Max(0, box.X - 4); x < Math.Min(w, box.Right + 4); x++)
-                    if (x < box.X + 8 || x > box.Right - 8 || y < box.Y + 8 || y > box.Bottom - 8)
+                    if (x < box.X + 14 || x > box.Right - 14 || y < box.Y + 14 || y > box.Bottom - 14)
                         solid[y * w + x] = 0;
-            Shape reference = DescribeLargest(solid, w, h, box);
-            if (reference == null) { trace = "box " + box.X + "," + box.Y + " but no shape inside it"; return null; }
+            // The criss-cross lines also run through the box and out to its edges, dragging the outline with them. They are two
+            // pixels wide, so one erosion of the box interior takes them and leaves the shape's own rim.
+            var thick = new byte[w * h];
+            for (int y = Math.Max(1, box.Y - 4); y < Math.Min(h - 1, box.Bottom + 4); y++)
+                for (int x = Math.Max(1, box.X - 4); x < Math.Min(w - 1, box.Right + 4); x++)
+                    thick[y * w + x] = solid[y * w + x];
+            for (int y = Math.Max(1, box.Y - 4); y < Math.Min(h - 1, box.Bottom + 4); y++)
+                for (int x = Math.Max(1, box.X - 4); x < Math.Min(w - 1, box.Right + 4); x++)
+                    if (solid[y * w + x] != 0 &&
+                        (thick[y * w + x - 1] == 0 || thick[y * w + x + 1] == 0 ||
+                         thick[(y - 1) * w + x] == 0 || thick[(y + 1) * w + x] == 0))
+                        solid[y * w + x] = 0;
+            int bandPix = 0, innerPix = 0;
+            for (int y = Math.Max(0, box.Y); y < Math.Min(h, box.Bottom); y++)
+                for (int x = Math.Max(0, box.X); x < Math.Min(w, box.Right); x++)
+                {
+                    if (solid[y * w + x] == 0) continue;
+                    if (x < box.X + 12 || x > box.Right - 12 || y < box.Y + 12 || y > box.Bottom - 12) bandPix++;
+                    else innerPix++;
+                }
+
+            string why;
+            Shape reference = DescribeLargest(solid, w, h, box, out why);
+            if (reference == null)
+            {
+                trace = "box " + box.X + "," + box.Y + " band" + bandPix + " inner" + innerPix + " but no shape inside it (" + why + ")";
+                return null;
+            }
 
             Shape best = null;
             Point bestAt = Point.Empty;
@@ -128,7 +155,6 @@ namespace AutoClicker
                 Shape s = Describe(solid, w, b);
                 if (s == null) continue;
                 candidates++;
-                // The fill only says solid or hollow, so it stays a small share of the score; the outline leads.
                 double distance = SignatureDistance(reference.Signature, s.Signature)
                                 + Math.Abs(reference.Fill - s.Fill) * 0.08
                                 + Math.Abs(reference.Point - s.Point) * 0.6;
@@ -324,25 +350,37 @@ namespace AutoClicker
                     int area = (x1 - x0 + 1) * (y1 - y0 + 1);
                     int sum = sat[(y1 + 1) * stride + x1 + 1] - sat[y0 * stride + x1 + 1]
                             - sat[(y1 + 1) * stride + x0] + sat[y0 * stride + x0];
+                    int o = (y * w + x) * 4;
                     if (Math.Abs(lum[y * w + x] - sum / area) >= EdgeMin) mask[y * w + x] = 1;
                 }
             }
+
+            // Erase anything thinner than a rim, before it is thickened: the panel's one- or two-pixel criss-cross lines.
+            var eroded = new byte[w * h];
+            for (int y = 1; y < h - 1; y++)
+                for (int x = 1; x < w - 1; x++)
+                {
+                    int at = y * w + x;
+                    if (mask[at] == 0) continue;
+                    if (mask[at - 1] != 0 && mask[at + 1] != 0 && mask[at - w] != 0 && mask[at + w] != 0)
+                        eroded[at] = 1;
+                }
 
             // Drop anything too thin to be a rim: the panel's one-pixel criss-cross lines and their dots.
             var kept = new byte[w * h];
             for (int y = 0; y < h; y++)
                 for (int x = 0; x < w; x++)
                 {
-                    if (mask[y * w + x] == 0) continue;
+                    if (eroded[y * w + x] == 0) continue;
                     int n = 0;
                     for (int dy = -1; dy <= 1; dy++)
                         for (int dx = -1; dx <= 1; dx++)
                         {
                             int nx = x + dx, ny = y + dy;
                             if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-                            n += mask[ny * w + nx];
+                            n += eroded[ny * w + nx];
                         }
-                    if (n >= 5) kept[y * w + x] = 1;
+                    if (n >= 4) kept[y * w + x] = 1;
                 }
 
             // Close the gaps in hatching and outlines.
@@ -414,19 +452,60 @@ namespace AutoClicker
             return !box.IsEmpty && x >= box.X - 4 && x <= box.Right + 4 && y >= box.Y - 4 && y <= box.Bottom + 4;
         }
 
-        /// <summary>The biggest shape inside the box, not counting the box's own border.</summary>
-        static Shape DescribeLargest(byte[] px, int w, int h, Rectangle box)
+        /// <summary>
+        /// The biggest shape inside the box, not counting the border. The interior is opened (eroded, then dilated) first, so
+        /// the thin lines crossing the box and the shape are gone while a solid shape of any real size stays.
+        /// </summary>
+        static Shape DescribeLargest(byte[] px, int w, int h, Rectangle box, out string why)
         {
+            why = "";
             Rectangle inner = box;
-            inner.Inflate(-10, -10);
-            Blob best = null;
-            foreach (Blob b in Blobs(px, w, h, inner, 20, Math.Max(box.Width, box.Height), true))
+            inner.Inflate(-16, -16);
+            if (inner.Width < 20 || inner.Height < 20) { why = "the box is too small"; return null; }
+
+            const int Open = 6;
+            var scratch = new byte[w * h];
+            for (int pass = 0; pass < Open; pass++)
             {
-                // The white border comes through as one huge ring round everything, so anything nearly as big as the box is it.
-                if (b.X1 - b.X0 + 1 > inner.Width * 0.8 && b.Y1 - b.Y0 + 1 > inner.Height * 0.8) continue;
+                Array.Copy(px, scratch, px.Length);
+                for (int y = inner.Y; y < inner.Bottom; y++)
+                    for (int x = inner.X; x < inner.Right; x++)
+                    {
+                        int at = y * w + x;
+                        if (px[at] == 0) continue;
+                        if (scratch[at - 1] == 0 || scratch[at + 1] == 0 ||
+                            scratch[at - w] == 0 || scratch[at + w] == 0) px[at] = 0;
+                    }
+            }
+            for (int pass = 0; pass < Open; pass++)
+            {
+                Array.Copy(px, scratch, px.Length);
+                for (int y = inner.Y; y < inner.Bottom; y++)
+                    for (int x = inner.X; x < inner.Right; x++)
+                    {
+                        int at = y * w + x;
+                        if (scratch[at] == 0) continue;
+                        px[at - 1] = 1;
+                        px[at + 1] = 1;
+                        px[at - w] = 1;
+                        px[at + w] = 1;
+                    }
+            }
+
+            Blob best = null;
+            int seen = 0;
+            foreach (Blob b in Blobs(px, w, h, inner, 20, Math.Max(inner.Width, inner.Height), true))
+            {
+                seen++;
+                int bw = b.X1 - b.X0 + 1, bh = b.Y1 - b.Y0 + 1;
+                why += bw + "x" + bh + " ";
                 if (best == null || b.Area > best.Area) best = b;
             }
-            return best == null ? null : Describe(px, w, best);
+            why = seen + " found: " + why;
+            if (best == null) return null;
+            Shape s = Describe(px, w, best);
+            if (s == null) why += "(describe failed)";
+            return s;
         }
 
        /// <summary>
