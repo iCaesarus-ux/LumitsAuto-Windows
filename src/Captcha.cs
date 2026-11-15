@@ -61,22 +61,57 @@ namespace AutoClicker
             return mx >= 160 && (mx - mn >= 45 || mx >= 240);
         }
 
-        /// <summary>Whether the panel is up: three pixels of its top strip are flat grey (whatever shade the map behind makes it) and the play area is dark.</summary>
+        /// <summary>The panel's title, in game-window pixels.</summary>
+        static readonly Rectangle Title = new Rectangle(860, 200, 200, 36);
+
+        static bool lastAnswer;
+        static long titleAt;
+
+        /// <summary>
+        /// Whether the panel is up: its title reads "Quick check". The title is only read a few times a second and the last
+        /// answer stands in between. The dark play area is checked first as a cheap filter, and if no text can be read at all
+        /// the top strip's flat grey is used instead.
+        /// </summary>
         public static bool Showing(Bitmap shot)
         {
             if (shot == null) return false;
             double k = shot.Width / (double)MeasuredWidth;
-            foreach (Point q in new[] { new Point(700, 231), new Point(960, 231), new Point(1220, 231) })
-            {
-                int x = (int)Math.Round(q.X * k), y = (int)Math.Round(q.Y * k);
-                if (x >= shot.Width || y >= shot.Height) return false;
-                Color c = shot.GetPixel(x, y);
-                int mx = Math.Max(c.R, Math.Max(c.G, c.B)), mn = Math.Min(c.R, Math.Min(c.G, c.B));
-                if (mx < 55 || mx > 145 || mx - mn > 26) return false;
-            }
             Rectangle play = S(Play, k);
             if (play.Right >= shot.Width || play.Bottom >= shot.Height) return false;
-            return shot.GetPixel(play.X + 8, play.Y + 90).GetBrightness() < 0.45;
+            if (shot.GetPixel(play.X + 8, play.Y + 90).GetBrightness() >= 0.45) return false;
+
+            long now = Environment.TickCount;
+            if (now - titleAt < 300) return lastAnswer;
+            titleAt = now;
+
+            string title = ScreenText.Read(shot, S(Title, k), AutoClicker.Ink.Light, 0, false) ?? "";
+            string letters = new string(title.Where(char.IsLetter).ToArray()).ToLowerInvariant();
+            lastAnswer = letters.Length == 0 ? GreyStrip(shot, k) : LumitNames.Distance(letters, "quickcheck") <= 3;
+            return lastAnswer;
+        }
+
+        /// <summary>The fallback: a row across the top strip is one flat grey.</summary>
+        static bool GreyStrip(Bitmap shot, double k)
+        {
+            int y = (int)Math.Round(231 * k);
+            if (y >= shot.Height) return false;
+            var vals = new int[9];
+            int sum = 0;
+            for (int i = 0; i < 9; i++)
+            {
+                int x = (int)Math.Round((650 + i * 78) * k);
+                if (x >= shot.Width) return false;
+                Color c = shot.GetPixel(x, y);
+                int mx = Math.Max(c.R, Math.Max(c.G, c.B)), mn = Math.Min(c.R, Math.Min(c.G, c.B));
+                if (mx - mn > 20) return false;
+                vals[i] = mx;
+                sum += mx;
+            }
+            int mean = sum / 9;
+            if (mean < 45 || mean > 150) return false;
+            for (int i = 0; i < 9; i++)
+                if (Math.Abs(vals[i] - mean) > 14) return false;
+            return true;
         }
 
         /// <summary>The shape to tap, in game-window coordinates, or null if none could be told apart.</summary>
