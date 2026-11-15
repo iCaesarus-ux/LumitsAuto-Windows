@@ -87,6 +87,19 @@ says how it's used. Split from LumitsAuto, which also holds the Android app (not
   `RetakeFirstStep`, before and after its second of stillness. `Captcha.Showing` read the screenshot right only with
   the game placed within 2 px (its grey margin is 65/78/69 there, a spread of 13 against its limit of 14), which is
   why the darkened check is there too. Tests: `BehindTheCaptcha` (real pictures) and a pretend panel run.
+- **The captcha known by its title spot (15 November, asked by the owner: "like all the other panels"):** Catching…
+  lists **"Quick check" title** (`CatchSpots.QuickCheckTitle`, centre anchor, 850, 220 222 × 36; screen "Quick check
+  (the game's captcha)"), pickable and testable like the other spots. The title's letters spanned 872–1049 × 228–248
+  on both of the owner's pictures (`captcha-quick-check.png`, `-2.png`: 14:16, from `%APPDATA%\AutoClicker\captchas`);
+  the old built-in title area (860, 200 200 × 36) caught only their top 8 px and read nothing, so `Captcha.Showing`
+  had been working through its grey-strip fallback alone. `Captcha.Showing(shot, title)` now reads the spot (the
+  engine's `CaptchaShowing`, from `SpotsNow`, which was `DuoSpotsNow`: catching's spots or `RunOptions.DuoSpots`);
+  `Showing(shot)` uses the spot's default for the picture's size. First a cheap look (`WhiteOnGrey`: grey corners,
+  at least 2% near-white; 16–17% on the pictures), then the 300 ms throttle and the reading. Test `QuickCheckTitle`:
+  reads "Quick check" on both, also shrunk to 1600 × 854, and none of the 14 other pictures is taken for it. Only the
+  check that the captcha is up was changed, not what happens then. The test scripts now reference `lib\OpenCvSharp.dll`
+  (needed since the solver commits of 15 November) and copy both OpenCvSharp DLLs beside the test; `lib\` is ignored
+  by git, so a fresh clone can't build or test without them.
 - **The owner's settings save fine; Claude's tools see an old copy (15 November).** The Claude desktop app is a
   Windows package, and Windows gives packaged apps a private AppData: a `settings.txt` written from inside Claude on
   30 October lives in `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\AutoClicker\`, and tools run

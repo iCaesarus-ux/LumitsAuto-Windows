@@ -214,8 +214,9 @@ namespace AutoClicker
         /// <summary>Catching and healing; null = off.</summary>
         public CatchOptions Catch;
         /// <summary>
-        /// Where a 2v2's bars and wild names are in the game window, so the radiant check sees 2v2s even with catching off
-        /// (the 1v1 name area misses both of a PC 2v2's name cards); null without a game window.
+        /// The Catching… window's spots in the game window, used with catching off: a 2v2's bars and wild names, so the radiant
+        /// check sees 2v2s (the 1v1 name area misses both of a PC 2v2's name cards), and the captcha's title. Null without a
+        /// game window.
         /// </summary>
         public Dictionary<string, Rectangle> DuoSpots;
     }

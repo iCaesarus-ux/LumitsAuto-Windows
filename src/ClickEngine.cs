@@ -318,7 +318,7 @@ namespace AutoClicker
             // Radiants only: running can't be undone, so the fight's menu has to be up before the names are judged. By
             // then the name cards have surely faded in, and a 2v2's bars show.
             if (RadiantsOnly && window != null && countedCycle != cycle) WaitUntil(() => YourTurnMenuLit(CurrentFrame()), 5000);
-            if (window != null && DuoSpotsNow != null && countedCycle != cycle && IsDuo(CurrentFrame()))
+            if (window != null && SpotsNow != null && countedCycle != cycle && IsDuo(CurrentFrame()))
             {
                 if (o.Catch != null) StartDuo();
                 else CheckDuoNames();
@@ -581,24 +581,37 @@ namespace AutoClicker
         /// <summary>A 2v2 fight: both your Lumits' HP bars on their small cards, and a wild one's at least.</summary>
         bool IsDuo(Bitmap shot)
         {
-            return CatchSpots.DuoShowing(shot, DuoSpotsNow);
+            return CatchSpots.DuoShowing(shot, SpotsNow);
         }
 
-        /// <summary>A 2v2's spots: catching's, or the run's own for the radiant check when catching is off; null without a game window.</summary>
-        Dictionary<string, Rectangle> DuoSpotsNow
+        /// <summary>
+        /// The Catching… window's spots (a 2v2's, the captcha's title): catching's, or the run's own when catching is off;
+        /// null without a game window.
+        /// </summary>
+        Dictionary<string, Rectangle> SpotsNow
         {
             get { return o.Catch != null ? o.Catch.Spots : o.DuoSpots; }
         }
 
+        /// <summary>The game's captcha ("Quick check") is up: its title, read at the "Quick check" title spot.</summary>
+        bool CaptchaShowing()
+        {
+            Dictionary<string, Rectangle> spots = SpotsNow;
+            Rectangle title;
+            return spots != null && spots.TryGetValue(CatchSpots.QuickCheckTitle, out title)
+                ? Captcha.Showing(CurrentFrame(), title)
+                : Captcha.Showing(CurrentFrame());
+        }
+
         double DuoBar(Bitmap shot, string key)
         {
-            return CatchSpots.DuoBar(shot, DuoSpotsNow, key);
+            return CatchSpots.DuoBar(shot, SpotsNow, key);
         }
 
         /// <summary>A wild Lumit's name card in a 2v2 (slot 0 the upper card, the left one on the field): its name, and how gold it is.</summary>
         string DuoCard(Bitmap shot, int slot, out double gold)
         {
-            Rectangle card = Rectangle.Intersect(DuoSpotsNow[slot == 0 ? CatchSpots.Enemy1Card : CatchSpots.Enemy2Card], new Rectangle(Point.Empty, shot.Size));
+            Rectangle card = Rectangle.Intersect(SpotsNow[slot == 0 ? CatchSpots.Enemy1Card : CatchSpots.Enemy2Card], new Rectangle(Point.Empty, shot.Size));
             gold = 0;
             if (card.Width <= 0 || card.Height <= 0) return "";
             using (Bitmap c = shot.Clone(card, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
@@ -1408,7 +1421,7 @@ namespace AutoClicker
             while (true)
             {
                 ThrowIfStopped();
-                if (o.Captcha && Captcha.Showing(CurrentFrame()))
+                if (o.Captcha && CaptchaShowing())
                 {
                     SomethingHappened();
                     SolveCaptcha();
@@ -1551,7 +1564,7 @@ namespace AutoClicker
         /// </summary>
         string BehindAPanel()
         {
-            if (window != null && Captcha.Showing(CurrentFrame())) return "a captcha is showing";
+            if (window != null && CaptchaShowing()) return "a captcha is showing";
             ClickPoint first = o.Points[0];
             Snapshot live = ReadArea(first.WatchArea);
             if (live == null) return null;

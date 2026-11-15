@@ -61,33 +61,57 @@ namespace AutoClicker
             return mx >= 160 && (mx - mn >= 45 || mx >= 240);
         }
 
-        /// <summary>The panel's title, in game-window pixels.</summary>
-        static readonly Rectangle Title = new Rectangle(860, 200, 200, 36);
-
         static bool lastAnswer;
         static long titleAt;
 
-        /// <summary>
-        /// Whether the panel is up: its title reads "Quick check". The title is only read a few times a second and the last
-        /// answer stands in between. The dark play area is checked first as a cheap filter, and if no text can be read at all
-        /// the top strip's flat grey is used instead.
-        /// </summary>
+        /// <summary>Whether the panel is up, with its title looked for where the "Quick check" title spot is by default.</summary>
         public static bool Showing(Bitmap shot)
         {
-            if (shot == null) return false;
-            double k = shot.Width / (double)MeasuredWidth;
-            Rectangle play = S(Play, k);
-            if (play.Right >= shot.Width || play.Bottom >= shot.Height) return false;
-            if (shot.GetPixel(play.X + 8, play.Y + 90).GetBrightness() >= 0.45) return false;
+            return shot != null && Showing(shot, CatchSpots.Get(CatchSpots.QuickCheckTitle).For(shot.Size));
+        }
+
+        /// <summary>
+        /// Whether the panel is up: its title reads "Quick check" at <paramref name="title"/>, the Catching… window's "Quick
+        /// check" title spot (yours, if you picked one), as other screens are known by their titles. First a cheap look: white
+        /// letters on the panel's flat grey. The title is then only read a few times a second and the last answer stands in
+        /// between. If no text can be read at all, the top strip's flat grey is used instead.
+        /// </summary>
+        public static bool Showing(Bitmap shot, Rectangle title)
+        {
+            if (shot == null || title.Width < 4 || title.Height < 4 || !new Rectangle(Point.Empty, shot.Size).Contains(title)) return false;
+            if (!WhiteOnGrey(shot, title)) return false;
 
             long now = Environment.TickCount;
             if (now - titleAt < 300) return lastAnswer;
             titleAt = now;
 
-            string title = ScreenText.Read(shot, S(Title, k), AutoClicker.Ink.Light, 0, false) ?? "";
-            string letters = new string(title.Where(char.IsLetter).ToArray()).ToLowerInvariant();
-            lastAnswer = letters.Length == 0 ? GreyStrip(shot, k) : LumitNames.Distance(letters, "quickcheck") <= 3;
+            string read = ScreenText.Read(shot, title, AutoClicker.Ink.Light, 0, false) ?? "";
+            string letters = new string(read.Where(char.IsLetter).ToArray()).ToLowerInvariant();
+            lastAnswer = letters.Length == 0 ? GreyStrip(shot, shot.Width / (double)MeasuredWidth) : LumitNames.Distance(letters, "quickcheck") <= 3;
             return lastAnswer;
+        }
+
+        /// <summary>
+        /// The title's look, before reading it: the spot's corners are the panel's grey (no colour to speak of) and some of
+        /// it is near-white letters. On the owner's two pictures the corners were 61–68, 72–81, 65–72 and the letters 16–17% of the spot.
+        /// </summary>
+        static bool WhiteOnGrey(Bitmap shot, Rectangle r)
+        {
+            foreach (Point p in new[] { new Point(r.Left + 1, r.Top + 1), new Point(r.Right - 2, r.Top + 1), new Point(r.Left + 1, r.Bottom - 2), new Point(r.Right - 2, r.Bottom - 2) })
+            {
+                Color c = shot.GetPixel(p.X, p.Y);
+                int mx = Math.Max(c.R, Math.Max(c.G, c.B)), mn = Math.Min(c.R, Math.Min(c.G, c.B));
+                if (mx - mn > 24 || mx > 170) return false;
+            }
+            int white = 0, all = 0;
+            for (int y = r.Top; y < r.Bottom; y += 2)
+                for (int x = r.Left; x < r.Right; x += 2)
+                {
+                    Color c = shot.GetPixel(x, y);
+                    all++;
+                    if (c.R >= 200 && c.G >= 200 && c.B >= 200) white++;
+                }
+            return white >= all * 0.02;
         }
 
         /// <summary>The fallback: a row across the top strip is one flat grey.</summary>

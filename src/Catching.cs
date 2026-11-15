@@ -65,11 +65,12 @@ namespace AutoClicker
         public const string Lead2Bar = "lead2Bar", Partner2Bar = "partner2Bar", Enemy1Bar = "enemy1Bar", Enemy2Bar = "enemy2Bar";
         public const string Enemy1Card = "enemy1Card", Enemy2Card = "enemy2Card", Back = "back";
         public const string Enemy1Tap = "enemy1Tap", Enemy2Tap = "enemy2Tap", Enemy1TapLow = "enemy1TapLow", Enemy2TapLow = "enemy2TapLow";
+        public const string QuickCheckTitle = "quickCheckTitle";
 
         public static string Iv(Stat s) { return "iv" + s; }
 
         const string Battle = "Fight, your turn", Caught = "New Lumit caught", Confirm = "Release confirmation", Map = "Map", Panel = "Infibex panel, Food tab";
-        const string Duo = "2v2 fight", DuoTarget = "2v2, choosing a target";
+        const string Duo = "2v2 fight", DuoTarget = "2v2, choosing a target", QuickCheck = "Quick check (the game's captcha)";
 
         public static readonly Spot[] All =
         {
@@ -122,6 +123,9 @@ namespace AutoClicker
             new Spot(Enemy2Tap, "Right wild Lumit (clicked)", DuoTarget, SpotKind.Click, Anchor.Center, 1494, 612, 43, 43),
             new Spot(Enemy1TapLow, "Left wild Lumit, lower", DuoTarget, SpotKind.Click, Anchor.Center, 1174, 612, 43, 36),
             new Spot(Enemy2TapLow, "Right wild Lumit, lower", DuoTarget, SpotKind.Click, Anchor.Center, 1501, 655, 43, 36),
+            // The panel sits in the middle of the window. Its title's letters spanned 872–1049 × 228–248 on both of the
+            // owner's captcha pictures of 15 November; the line of instructions under it starts at y 268.
+            new Spot(QuickCheckTitle, "\"Quick check\" title", QuickCheck, SpotKind.Text, Anchor.Center, 850, 220, 222, 36),
         };
 
         public static Spot Get(string key)

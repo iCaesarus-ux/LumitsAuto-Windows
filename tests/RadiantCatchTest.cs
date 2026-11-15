@@ -639,6 +639,58 @@ namespace AutoClicker
         }
 
         /// <summary>
+        /// The captcha is known by its title, read at the "Quick check" title spot like other screens' titles: on both of the
+        /// owner's captcha pictures (also shrunk to a smaller window), and on none of the other pictures of the game.
+        /// </summary>
+        static void QuickCheckTitle(string dir)
+        {
+            Console.WriteLine("\n== The captcha known by its title spot");
+            Spot spot = CatchSpots.Get(CatchSpots.QuickCheckTitle);
+            // The title is read at most a few times a second and the last answer stands in between: wait that out each time.
+            Func<Bitmap, Rectangle, bool> showing = (b, r) => { Thread.Sleep(320); return Captcha.Showing(b, r); };
+            string[] captchas = { "captcha-quick-check.png", "captcha-quick-check-2.png" };
+            foreach (string name in captchas)
+            {
+                Bitmap shot = Load(dir, name);
+                if (shot == null)
+                {
+                    Check(false, name + " must be beside radiant.jpg");
+                    continue;
+                }
+                using (shot)
+                {
+                    Rectangle r = spot.For(shot.Size);
+                    string read = (ScreenText.Read(shot, r, Ink.Light, 0, false) ?? "").Trim();
+                    string before = (ScreenText.Read(shot, new Rectangle(860, 200, 200, 36), Ink.Light, 0, false) ?? "").Trim();
+                    Check(read == "Quick check" && showing(shot, r),
+                          name + ": the title spot (" + r.X + ", " + r.Y + "  " + r.Width + "×" + r.Height + ") reads \"" + read +
+                          "\" and the captcha is seen (the old title area 860, 200  200×36 read \"" + before + "\")");
+                    int h = 854, w = (int)Math.Round(shot.Width * h / (double)shot.Height);
+                    using (var small = new Bitmap(w, h, PixelFormat.Format32bppArgb))
+                    {
+                        using (Graphics g = Graphics.FromImage(small))
+                        {
+                            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                            g.DrawImage(shot, 0, 0, w, h);
+                        }
+                        Rectangle rs = spot.For(small.Size);
+                        string readSmall = (ScreenText.Read(small, rs, Ink.Light, 0, false) ?? "").Trim();
+                        Check(showing(small, rs), name + " in a " + w + " × " + h + " window: the spot moves to " + rs.X + ", " + rs.Y + "  " +
+                              rs.Width + "×" + rs.Height + ", reads \"" + readSmall + "\", and the captcha is seen");
+                    }
+                }
+            }
+            var others = Directory.GetFiles(dir).Where(f => f.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase))
+                                  .Select(Path.GetFileName).Where(f => !f.StartsWith("captcha", StringComparison.OrdinalIgnoreCase)).OrderBy(f => f).ToList();
+            var seen = new List<string>();
+            foreach (string name in others)
+                using (Bitmap shot = Load(dir, name))
+                    if (shot != null && showing(shot, spot.For(shot.Size))) seen.Add(name);
+            Check(others.Count >= 10 && seen.Count == 0, "None of the " + others.Count + " other pictures of the game is taken for the captcha" +
+                  (seen.Count > 0 ? " (taken: " + string.Join(", ", seen) + ")" : ""));
+        }
+
+        /// <summary>
         /// Nothing the steps know shows up for a time-out: step 1's picture is retaken from the screen and step 1 clicked. Another
         /// step's screen coming up after shows the game was on the map, only looking different; none coming up stops the run.
         /// Retaken pictures count beside the step's own for the rest of the run, and each new stuck spell gets its own.
@@ -872,6 +924,7 @@ namespace AutoClicker
                 string dir = Path.GetDirectoryName(Path.GetFullPath(args[0]));
                 NightLight(dir);
                 BehindTheCaptcha(dir);
+                QuickCheckTitle(dir);
 
                 Console.WriteLine("\n== The window's text fits");
                 using (var font = new Font("Segoe UI", 9F))

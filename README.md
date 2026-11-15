@@ -254,6 +254,9 @@ for Lumits at any window size.
 - Select one and press **Test** while that screen shows in the game. It shows the spot and what
   it reads there.
 - If a spot is off, use **Pick…** to place it yourself. **Use default** puts it back.
+- The game's captcha is there too: **"Quick check" title** (screen *Quick check (the game's captcha)*).
+  The app knows the captcha is up when that spot reads "Quick check", as it knows other screens by
+  their titles. It's used whenever a game window is chosen, with catching on or off.
 
 **Reading the IVs:** the "IV n" labels are small and faint. The app reads each one 28 ways
 (several zoom levels, with and without a contrast stretch) and counts what each reading found.
@@ -357,13 +360,16 @@ way with `recorder\build.cmd`, from `recorder\src`.
 ## Tests
 
 Both tests play against the real `ClickEngine` in a pretend game window placed off-screen, so the real pointer
-doesn't move. The pictures they use are in `tests/pictures`.
+doesn't move. The pictures they use are in `tests/pictures`. Like `build.cmd`, they need OpenCvSharp in `lib\`
+(`OpenCvSharp.dll` and `OpenCvSharpExtern.dll`, not in the repository), which they copy beside the test in
+`%TEMP%\LumitsAutoTests`.
 
 - **Radiant catching**, from the repository's folder:
   `tests\run-radiant-test.cmd tests\pictures\pc\radiant.jpg tests\pictures\pc\game-turn-lowmp.png tests\pictures\pc\game-caught-sdoodo.png tests\pictures\pc\game-fainted-choice.png`
   It also covers radiants only (runs, a failed run, a radiant after runs), getting stuck on a screen the steps
-  don't know, and steps' pictures by day and by night (which also use the `duo-*.png` pictures beside
-  `radiant.jpg`). It takes about three minutes.
+  don't know, steps' pictures by day and by night, and the captcha: the map darkened behind it, and its
+  title spot reading "Quick check" on `captcha-quick-check*.png` (also shrunk to a 1600 × 854 window) and on
+  none of the other pictures (these use the pictures beside `radiant.jpg`). It takes about three minutes.
 - **Radiants in 2v2s:** `tests\run-duo-test.cmd` (about 10 seconds), on the PC pictures in `tests\pictures\pc`:
   the 2v2 spots on `duo-*.png` (seen as 2v2s, both names read, a gold name in either card found, no 1v1 taken
   for a 2v2, Test now), then pretend runs. A radiant in either card, or both, stops the run with nothing
