@@ -70,9 +70,14 @@ says how it's used. Split from LumitsAuto, which also holds the Android app (not
   map fits the new picture and not the old in a later pass than the one where something happened. Healing waits until the retake proved right. On a
   captcha this clicks step 1's spot there once before stopping (the owner was told). Tests: `StuckOnAScreen`. Not run in
   the game yet.
-- The owner's saved settings had the radiant check off (`alert=0`) on 14 November.
-- **Settings not saving (not solved):** `%APPDATA%\AutoClicker\settings.txt` was last written on 30 October, in an
-  older format (no `catchRadiants`), while `lumits.txt` beside it was written during a run on 14 November. Saving
-  swallowed any error then. Loading a copy and saving it elsewhere with the same code worked. Now `MainForm.SaveSettings`
-  shows a failure (title "Auto Clicker — settings not saved", and the status line) and `AppSettings.NoteSaveProblem`
-  appends it with its stack trace to `save-error.txt` beside the settings: read that file once the owner runs this.
+- **The owner's settings save fine; Claude's tools see an old copy (15 November).** The Claude desktop app is a
+  Windows package, and Windows gives packaged apps a private AppData: a `settings.txt` written from inside Claude on
+  30 October lives in `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\AutoClicker\`, and tools run
+  from Claude read that copy at `%APPDATA%\AutoClicker\settings.txt` (same file ID). Files with no such copy, like
+  `lumits.txt`, read through to the real ones. The real `settings.txt` (the owner's app runs from Explorer) was
+  saved on 15 November at 11:46, 20,529 bytes, 3 steps. To read the real folder, start a command outside the package,
+  e.g. PowerShell `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'cmd.exe
+  /c ...' }` writing to a file, and never print `alertPhone` (the webhook). Anything run from Claude that saves
+  settings (the app itself, a test) writes into the package's copy, not the owner's. 14 November's "settings not
+  saving" and `alert=0` came from that old copy; `MainForm.SaveSettings` still reports a real failure (title "Auto
+  Clicker — settings not saved", status line, `save-error.txt` beside the settings).
