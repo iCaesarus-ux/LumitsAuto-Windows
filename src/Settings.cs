@@ -40,6 +40,9 @@ namespace AutoClicker
         public bool HidMouse;
         public string HidPort = "";
 
+        /// <summary>Solve the shape-matching captcha by itself.</summary>
+        public bool Captcha;
+
         /// <summary>Radiant alert: check the enemy's name for gold before clicking step AlertStep (1-based).</summary>
         public bool AlertEnabled;
         /// <summary>The attack step and the enemy's name card, used by both the radiant check and the counter.</summary>
@@ -161,6 +164,7 @@ namespace AutoClicker
             lines.Add("background=" + Flag(Background));
             lines.Add("hidMouse=" + Flag(HidMouse));
             lines.Add("hidPort=" + HidPort);
+            lines.Add("captcha=" + Flag(Captcha));
             lines.Add("alert=" + Flag(AlertEnabled));
             lines.Add("alertStep=" + Num(AlertStep));
             lines.Add("alertArea=" + Num(AlertArea.X) + "," + Num(AlertArea.Y) + "," + Num(AlertArea.Width) + "," + Num(AlertArea.Height));
@@ -246,6 +250,7 @@ namespace AutoClicker
                     case "background": Background = val == "1"; break;
                     case "hidmouse": HidMouse = val == "1"; break;
                     case "hidport": HidPort = val; break;
+                    case "captcha": Captcha = val == "1"; break;
                     case "alert": AlertEnabled = val == "1"; break;
                     case "alertstep": AlertStep = Int(val, AlertStep); break;
                     case "alertgold": AlertGoldPercent = Int(val, AlertGoldPercent); break;

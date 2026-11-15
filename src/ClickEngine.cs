@@ -1057,6 +1057,30 @@ namespace AutoClicker
             }
         }
 
+        /// <summary>
+        /// The game's shape check is up. One tap only, so the closest match is taken whenever there is one at all;
+        /// the run only stops when nothing could be told apart.
+        /// </summary>
+        void SolveCaptcha()
+        {
+            SetActivity("captcha, finding the matching shape");
+            using (Bitmap shot = FreshFrame())
+            {
+                if (shot == null) throw new StopRun("a captcha appeared and the screen couldn't be read");
+                Point? at = Captcha.Solve(shot);
+                Captcha.Save(shot, at);
+                if (!at.HasValue)
+                    throw new StopRun("a captcha appeared and no matching shape could be found, so nothing was tapped")
+                    {
+                        AlertTitle = "Captcha",
+                        Screenshot = Evidence()
+                    };
+                SetActivity("captcha, tapping the match at " + at.Value.X + ", " + at.Value.Y);
+                ClickRect(new Rectangle(at.Value.X, at.Value.Y, 1, 1), false);
+            }
+            Pause(600);
+        }
+
         CatchDecision Decide(CaughtReading read, string lumit, bool catchIt, bool radiant)
         {
             if (radiant) return new CatchDecision { Keep = true, Reason = "radiant" };
@@ -1384,6 +1408,14 @@ namespace AutoClicker
             while (true)
             {
                 ThrowIfStopped();
+                if (o.Captcha && Captcha.Showing(CurrentFrame()))
+                {
+                    SomethingHappened();
+                    SolveCaptcha();
+                    deadline = clock.ElapsedMilliseconds + p.TimeoutSec * 1000L;
+                    SetActivity("waiting for step " + (i + 1));
+                    continue;
+                }
                 if (CaughtScreenShowing())
                 {
                     SomethingHappened();

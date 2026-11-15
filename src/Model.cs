@@ -181,6 +181,8 @@ namespace AutoClicker
         public bool Background;
         /// <summary>Send mouse input through the Pico HID bridge, so Windows sees a real mouse.</summary>
         public bool Hid;
+        /// <summary>Solve the game's shape-matching captcha when it appears.</summary>
+        public bool Captcha;
         public int IntervalMs;
         /// <summary>Each wait varies by up to this many percent either way; 0 = exact timing.</summary>
         public int RandomPercent;

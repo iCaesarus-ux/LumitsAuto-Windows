@@ -35,6 +35,7 @@ namespace AutoClicker
         ComboBox cbWindow, cbArea;
         CheckBox chkBackground, chkCount;
         CheckBox chkHid;
+        CheckBox chkCaptcha;
         ComboBox cbHidPort;
         Button btnHidRefresh;
         Label lblAlert, lblCounter, lblCounterMore, lblCatch;
@@ -129,6 +130,9 @@ namespace AutoClicker
             chkBackground = AddCheck(grpWindow, "Background mode (mouse stays free)", 410, 24);
             lblAlert = AddLabel(grpWindow, "", 14, 58);
             AddButton(grpWindow, "Alerts…", 526, 52, 116, 26, delegate { OpenAlertSettings(); });
+            chkCaptcha = AddCheck(grpWindow, "Solve captchas", 410, 52);
+            lblAlert.AutoSize = false;
+            lblAlert.Width = 380;
             tips.SetToolTip(cbWindow, "Step positions are measured inside this window, so moving the window doesn't break them.\nThe app also reads this window directly, so it can be covered by other windows.");
             tips.SetToolTip(chkBackground, "Clicks go straight to the game window as messages, so your real mouse pointer\nstays free. The game must not be minimized; keep your own pointer off it while running.");
 
@@ -252,6 +256,7 @@ namespace AutoClicker
                 if (chkHid.Checked) chkBackground.Checked = false;
                 UpdateEnabledStates();
             };
+            chkCaptcha.CheckedChanged += delegate { settings.Captcha = chkCaptcha.Checked; };
             chkCount.CheckedChanged += delegate
             {
                 settings.CountLumits = chkCount.Checked;
@@ -373,6 +378,7 @@ namespace AutoClicker
             chkBackground.Checked = settings.Background && HasTarget;
             chkHid.Checked = settings.HidMouse;
             FillHidPorts();
+            chkCaptcha.Checked = settings.Captcha;
             chkCount.Checked = settings.CountLumits;
             UpdateAlertLabel();
             UpdateCounterLabel();
@@ -403,6 +409,7 @@ namespace AutoClicker
             settings.Background = chkBackground.Checked && HasTarget;
             settings.HidMouse = chkHid.Checked;
             settings.HidPort = (cbHidPort.SelectedItem as string) ?? "";
+            settings.Captcha = chkCaptcha.Checked;
             settings.CountLumits = chkCount.Checked;
         }
 
@@ -995,6 +1002,7 @@ namespace AutoClicker
             var options = new RunOptions
             {
                 Hid = hid,
+                Captcha = chkCaptcha.Checked,
                 Points = points.Select(p => p.Clone()).ToArray(),
                 Space = space,
                 Background = background,
