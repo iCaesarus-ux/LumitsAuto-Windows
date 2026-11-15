@@ -57,6 +57,11 @@ namespace AutoClicker
             public readonly List<long> RunToStoneMs = new List<long>();
             /// <summary>Someone stands on step 1's spot on the map; with StandingGoes, only until the stone is first clicked.</summary>
             public bool Standing, StandingGoes;
+            /// <summary>How whoever stands there looks, the next one after each click on the stone (null: always crimson).</summary>
+            public Brush[] Looks;
+            int look;
+            /// <summary>The unknown screen keeps changing colour, so it never holds still.</summary>
+            public bool Flicker;
             readonly Stopwatch clock = Stopwatch.StartNew();
             long ranAt = -1;
 
@@ -75,6 +80,9 @@ namespace AutoClicker
                 Bounds = new Rectangle(-6000, -6000, 1920, 1025);
                 SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.Opaque, true);
                 Redraw();
+                var flicker = new System.Windows.Forms.Timer { Interval = 150 };
+                flicker.Tick += delegate { if (Flicker && State == Screen.Unknown) Redraw(); };
+                flicker.Start();
             }
 
             protected override bool ShowWithoutActivation { get { return true; } }
@@ -113,13 +121,16 @@ namespace AutoClicker
                             if (Standing)
                             {
                                 // Someone on step 1's spot (the steps' picture of it is the bare map).
-                                g.FillRectangle(Brushes.Crimson, 25, 305, 50, 50);
+                                g.FillRectangle(Looks != null ? Looks[look % Looks.Length] : Brushes.Crimson, 25, 305, 50, 50);
                                 g.FillRectangle(Brushes.White, 35, 315, 30, 15);
                             }
                             break;
                         case Screen.Unknown:
                             // A screen none of the steps know, that clicks don't get past.
-                            g.FillRectangle(Brushes.DarkSlateBlue, 0, 0, 1920, 1025);
+                            if (Flicker)
+                                using (var b = new SolidBrush(Color.FromArgb((int)(clock.ElapsedMilliseconds / 10 % 256), 40, 90)))
+                                    g.FillRectangle(b, 0, 0, 1920, 1025);
+                            else g.FillRectangle(Brushes.DarkSlateBlue, 0, 0, 1920, 1025);
                             g.FillRectangle(Brushes.White, 760, 400, 400, 60);
                             break;
                         case Screen.Victory:
@@ -180,6 +191,7 @@ namespace AutoClicker
                         if (ranAt >= 0) RunToStoneMs.Add(clock.ElapsedMilliseconds - ranAt);
                         ranAt = -1;
                         if (StandingGoes) Standing = false;
+                        look++;
                         if (NextFights.Count == 0)
                         {
                             Finished = true;
@@ -309,8 +321,6 @@ namespace AutoClicker
             public List<string> Notices = new List<string>();
             public List<string> Activity = new List<string>();
             public LumitCounter Counter;
-            /// <summary>Step 1's pictures the run retook and asked to keep.</summary>
-            public List<Snapshot> Retaken = new List<Snapshot>();
         }
 
         static GameWindow WindowFor(IntPtr handle)
@@ -403,7 +413,6 @@ namespace AutoClicker
                     lock (played.Activity)
                         if (activity.Length > 0 && (played.Activity.Count == 0 || played.Activity[played.Activity.Count - 1] != activity)) played.Activity.Add(activity);
                 };
-                engine.FirstStepRetaken += (area, picture) => { lock (played.Retaken) played.Retaken.Add(picture); };
                 engine.Finished += r => { played.Result = r; finished.Set(); };
                 engine.Start(run);
 
@@ -568,7 +577,7 @@ namespace AutoClicker
         /// <summary>
         /// Nothing the steps know shows up for a time-out: step 1's picture is retaken from the screen and step 1 clicked. Another
         /// step's screen coming up after shows the game was on the map, only looking different; none coming up stops the run.
-        /// The new picture is kept in the steps only once the map comes back looking like it and not like the old one.
+        /// Retaken pictures count beside the step's own for the rest of the run, and each new stuck spell gets its own.
         /// </summary>
         static void StuckOnAScreen()
         {
@@ -590,24 +599,56 @@ namespace AutoClicker
 
             Played stays = Play(g => { g.State = Game.Screen.Map; g.Standing = true; g.Radiant = false; g.NextFights.Enqueue(false); g.NextFights.Enqueue(false); }, timeoutSec: 3);
             Console.WriteLine("      " + string.Join(", ", stays.Game.Trace) + "; app: " + string.Join(" / ", stays.Activity.Where(a => a.Contains("step 1"))));
-            Check(stays.Activity.Any(a => a.Contains("step 1's picture was retaken")) && stays.Game.Fights == 3 && stays.Game.AttackClicks == 2 && stays.Game.Other.Count == 0,
+            Check(stays.Activity.Any(a => a.Contains("step 1's picture retaken (1 this run)")) && stays.Game.Fights == 3 && stays.Game.AttackClicks == 2 && stays.Game.Other.Count == 0,
                   "Someone stays on step 1's spot: its picture is retaken, step 1 clicked, and both fights after are fought: " + string.Join("; ", stays.Game.Other));
-            Check(stays.Retaken.Count == 1 && stays.Retaken[0].Similarity(standing) > 0.95, "The new picture is kept in the steps, once the map came back looking like it (" + stays.Retaken.Count + " kept)");
+            Check(!stays.Activity.Any(a => a.Contains("(2 this run)")), "The map with them on it fits the retaken picture after the fight, so once was enough");
             Check(stays.Result.Problem == null, "The run carried on until the test stopped it");
 
             Played goes = Play(g => { g.State = Game.Screen.Map; g.Standing = true; g.StandingGoes = true; g.Radiant = false; g.NextFights.Enqueue(false); g.NextFights.Enqueue(false); }, timeoutSec: 3);
             Console.WriteLine("      " + string.Join(", ", goes.Game.Trace));
             Check(goes.Game.Fights == 3 && goes.Game.AttackClicks == 2 && goes.Game.Other.Count == 0 && goes.Result.Problem == null,
-                  "Someone stands there and walks off: both fights are fought, the map found by its old picture after");
-            Check(goes.Retaken.Count == 0, "The old picture fits again, so it stays in the steps (" + goes.Retaken.Count + " kept)");
+                  "Someone stands there and walks off: both fights are fought, the map found by its own picture after");
+
+            // Before 15 November a second stuck spell got no retake until the map had fitted the first retaken picture or the old
+            // one again, which a character in a new spot each time never did, so the run stopped.
+            Played moves = Play(g =>
+            {
+                g.State = Game.Screen.Map;
+                g.Standing = true;
+                g.Looks = new[] { Brushes.Crimson, Brushes.RoyalBlue, Brushes.Gold };
+                g.Radiant = false;
+                g.NextFights.Enqueue(false);
+                g.NextFights.Enqueue(false);
+            }, timeoutSec: 3);
+            Console.WriteLine("      " + string.Join(", ", moves.Game.Trace) + "; app: " + string.Join(" / ", moves.Activity.Where(a => a.Contains("retaken"))));
+            Check(moves.Activity.Any(a => a.Contains("(2 this run)")) && moves.Game.Fights == 3 && moves.Game.AttackClicks == 2 && moves.Game.Other.Count == 0 && moves.Result.Problem == null,
+                  "Looking different after each fight: each stuck spell gets its own retake, and the run goes on");
 
             Played stuck = Play(g => { g.State = Game.Screen.Unknown; g.Radiant = false; g.NextFights.Enqueue(false); }, timeoutSec: 3);
             Console.WriteLine("      " + stuck.Result.Problem + "; clicked: " + string.Join(", ", stuck.Game.Other));
             Check(stuck.Result.Problem != null && stuck.Result.Problem.StartsWith("stuck on a screen it doesn't know") && stuck.Result.AlertTitle == "Stuck on an unknown screen" &&
                   stuck.Result.Screenshot != null && stuck.Result.Screenshot.Length > 0,
                   "A screen clicks don't get past: after the retake and step 1's click, the run stops and always alerts, with a picture");
-            Check(stuck.Game.Other.Count >= 1 && stuck.Game.Other.Count <= 3 && stuck.Game.Other.All(c => c.StartsWith("unknown screen (9")) && stuck.Retaken.Count == 0,
-                  "Only step 1's spot was clicked there, and nothing was kept");
+            Check(stuck.Game.Other.Count >= 1 && stuck.Game.Other.Count <= 3 && stuck.Game.Other.All(c => c.StartsWith("unknown screen (9")),
+                  "Only step 1's spot was clicked there");
+
+            Played moving = Play(g => { g.State = Game.Screen.Unknown; g.Flicker = true; g.Radiant = false; g.NextFights.Enqueue(false); }, timeoutSec: 3);
+            Console.WriteLine("      " + moving.Result.Problem + "; app: " + string.Join(" / ", moving.Activity.Where(a => a.Contains("known"))));
+            Check(moving.Result.Problem != null && moving.Result.Problem.Contains("closest, ") && moving.Result.Problem.Contains("wasn't retaken: the screen kept changing") &&
+                  moving.Game.Other.Count == 0,
+                  "A screen that never holds still isn't retaken or clicked; the stop says which step came closest, and why");
+            Check(moving.Activity.Any(a => a.StartsWith("no known screen (step ") && a.Contains("% of 80%), looking 2/3")),
+                  "Meanwhile the status line says which step's picture comes closest");
+
+            Console.WriteLine("\n== Radiants only: after a run, the map with someone on step 1's spot (time-outs of 30 s)");
+            Played ran = Play(g => { g.Standing = true; g.Radiant = false; g.NextFights.Enqueue(false); }, c => c.RadiantsOnly = true, runStep: true, timeoutSec: 30);
+            Console.WriteLine("      " + string.Join(", ", ran.Game.Trace) + "; from each run to the next stone: " + string.Join(", ", ran.Game.RunToStoneMs) + " ms");
+            Check(ran.Game.Runs == 2 && ran.Game.Other.Count == 0 && ran.Result.Problem == null, "Both fights were run from, nothing else clicked");
+            Check(ran.Game.RunToStoneMs.Count == 2 && ran.Game.RunToStoneMs[0] >= 10000 && ran.Game.RunToStoneMs[0] < 15000,
+                  "Step 1's picture was retaken 10 s after the run, not after a 30 s time-out");
+            Check(ran.Game.RunToStoneMs.Count == 2 && ran.Game.RunToStoneMs[1] < 3000, "After the next run the retaken picture fits straight away");
+            Check(ran.Activity.Any(a => a.Contains("waiting for the map (step 1) after the run")) && ran.Activity.Any(a => a.Contains("10 s after the run")),
+                  "The status line says it's waiting for the map after a run, then that it retook step 1's picture");
         }
 
         static void Simulate()

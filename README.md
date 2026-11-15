@@ -47,20 +47,30 @@ is really on:
   after the fight's step, the fight is over, and the next one counts as a new fight;
 - if the previous step's screen comes back (the enemy survived), it clicks it again right away;
 - if nothing it knows shows up for one of the step's time-outs (30 s by default), the game may
-  still be on the first step's screen (the map), only looking different, say with someone standing
-  on the watched spot. So the app retakes step 1's picture from the screen, as its *Retake snapshot
-  from screen* button would, and clicks step 1. It does that only once the screen has held still
-  for a second, never in a radiant's fight, and only if another step has a picture to wait for;
-- if after that no other step's screen comes up within two more time-outs (60 s by default), the
-  game is somewhere the steps don't know: the run stops and always alerts your phone ("Stuck on an
-  unknown screen", with a screenshot), whatever *Also when a run stops by itself* says. Note that
+  still be on the first step's screen (the map), only looking different, say with your character
+  standing on the watched spot. So the app retakes step 1's picture from the screen, as its *Retake
+  snapshot from screen* button would, and clicks step 1. It does that only once the screen has held
+  still for a second, never in a radiant's fight, and only if another step has a picture to wait for.
+  In radiants only, after a run only the map can come, so that happens after 10 seconds instead;
+- the retaken picture counts beside step 1's own for the rest of the run (up to 8 of them), so the
+  same look is found straight away next time, and each new stuck spell gets its own retake. They're
+  never put into your steps: one with your character in it stops fitting once it moves;
+- if after a retake no other step's screen comes up within two more time-outs (60 s by default),
+  the game is somewhere the steps don't know: the run stops and always alerts your phone ("Stuck on
+  an unknown screen", with a screenshot), whatever *Also when a run stops by itself* says. Note that
   this means step 1's spot is clicked once on whatever that screen is (a captcha too);
-- the new picture goes into your steps only once the map has come back looking like it and not
-  like the old one. If the old one fits again (whoever stood there walked off), your steps stay as
-  they were. For the rest of the run both count;
-- when step 1's picture can't be retaken (the screen keeps changing, or step 1 doesn't wait for a
-  screen), it keeps looking for three of the step's time-outs (about 90 s by default) and only then
-  stops, sending the reason and a screenshot to your phone.
+- while nothing fits, the status line says which step's picture comes closest, e.g. "no known
+  screen (step 1 closest, 64% of 80%), looking 2/3". When step 1's picture can't be retaken (the
+  screen keeps changing, or step 1 doesn't wait for a screen), it keeps looking for three of the
+  step's time-outs (about 90 s by default) and only then stops, saying the closest step and why there
+  was no retake, and sending a screenshot to your phone.
+
+**Step 1's picture:** step 1 tells the app the map is showing. If it watches the spot it clicks and
+your character stands there after walking to it, the picture fits only when the character happens to
+stand elsewhere. It's steadier to have step 1 watch something only the map has and your character
+can't cover: in the step's settings, under *Wait for screen*, **Pick area…** and drag over the map's
+bottom bar (Team, Bag, Dex, PvP, Friends, Guild, Settings). The game's night doesn't change its
+buttons, and step 1 still clicks the same spot.
 
 ## Alerts (radiants and stops)
 

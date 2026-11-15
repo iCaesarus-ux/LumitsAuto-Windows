@@ -65,11 +65,19 @@ says how it's used. Split from LumitsAuto, which also holds the Android app (not
   `ClickEngine.RetakeFirstStep` retakes step 1's picture from the screen (only a screen held still for 1 s, not in a
   radiant's fight, only with another waiting step) and returns step 1 to click. Another step's screen (or a caught or
   fainted screen) after it is `SomethingHappened`; none within two of the awaited step's time-outs throws `StillStuck`
-  (alert title "Stuck on an unknown screen", always sent). The old picture still counts for the rest of the run
-  (`firstStepOwn`); `FirstStepSeen` raises `FirstStepRetaken` (MainForm puts it in the steps and saves) only once the
-  map fits the new picture and not the old in a later pass than the one where something happened. Healing waits until the retake proved right. On a
-  captcha this clicks step 1's spot there once before stopping (the owner was told). Tests: `StuckOnAScreen`. Not run in
-  the game yet.
+  (alert title "Stuck on an unknown screen", always sent). Healing waits until the retake proved right. On a captcha
+  this clicks step 1's spot there once before stopping (the owner was told). Tests: `StuckOnAScreen`.
+- **Stuck after a run in radiants only (15 November, owner's screenshot: "step 3 hasn't shown up, still looking
+  (3/3)"):** read-only picture of the game: the map, with the character standing on the bush that step 1 watches
+  (907, 498, 116 × 70, the same area it clicks), so its picture didn't fit. The retake then didn't come: after one had
+  worked, `retakeToSave` blocked any other until the map fitted the old or new picture again, which a character in a
+  new spot each time never did. Now retaken pictures are extras for the run only (`firstStepExtra`, up to 8, counted in
+  `Matches` and `Likeness`), never put into the steps (`FirstStepRetaken` and MainForm's `KeepRetakenPicture` are
+  gone), and any stuck spell can retake once the last retake was shown right. After a run (`afterRun` in
+  `WaitForScreen`) the retake comes after 10 s (`RetakeAfterRunMs`), and the status says "waiting for the map (step 1)
+  after the run". While nothing fits, the status and the stop say the closest step (`Closest`: "step 1 closest, 64% of
+  80%") and why there was no retake. The owner was advised to have step 1 watch the map's bottom bar (Team … Settings,
+  map only, interface so the night doesn't change it). Not run in the game yet.
 - **The owner's settings save fine; Claude's tools see an old copy (15 November).** The Claude desktop app is a
   Windows package, and Windows gives packaged apps a private AppData: a `settings.txt` written from inside Claude on
   30 October lives in `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\AutoClicker\`, and tools run
