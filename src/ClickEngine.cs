@@ -1828,7 +1828,7 @@ namespace AutoClicker
             }
             if (!o.HumanMouse)
             {
-                Native.Click(button, doubleClick);
+                Pointer.Click(button, doubleClick);
                 return;
             }
             // A short settle before pressing, and a real press-and-hold, like a finger.

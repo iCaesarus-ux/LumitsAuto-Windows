@@ -24,7 +24,7 @@ namespace AutoClicker
         const int Rays = 36;
 
         /// <summary>How unlike the reference the best candidate may be; above this it gives up rather than guess.</summary>
-        const double MaxDistance = 0.42;
+        const double MaxDistance = 0.48;
 
         sealed class Blob
         {
@@ -46,11 +46,11 @@ namespace AutoClicker
                                  (int)Math.Round(r.Width * k), (int)Math.Round(r.Height * k));
         }
 
-        /// <summary>A pixel bright or coloured enough to be a shape; background masses are duller than this.</summary>
+        /// <summary>A pixel bright or coloured enough to be a shape; the dull background masses are below this.</summary>
         static bool Ink(int r, int g, int b)
         {
             int mx = Math.Max(r, Math.Max(g, b)), mn = Math.Min(r, Math.Min(g, b));
-            return mx >= 90 && (mx - mn >= 55 || mx >= 190);
+            return mx >= 90 && (mx - mn >= 80 || mx >= 190);
         }
 
         /// <summary>Whether the panel is up: three pixels of its top margin are plain light grey and the play area is dark.</summary>
@@ -72,12 +72,20 @@ namespace AutoClicker
         }
 
         /// <summary>The shape to tap, in game-window coordinates, or null if none could be told apart.</summary>
-        public static Point? Solve(Bitmap shot)
+       public static Point? Solve(Bitmap shot) { string trace; Rectangle box; return Solve(shot, out trace, out box); }
+
+        /// <summary>
+        /// The shape to tap, in game-window coordinates, or null if none could be told apart. <paramref name="trace"/> says how
+        /// far it got and <paramref name="box"/> is the box it found, both for the probe.
+        /// </summary>
+        public static Point? Solve(Bitmap shot, out string trace, out Rectangle box)
         {
+            trace = "";
+            box = Rectangle.Empty;
             double k = shot.Width / (double)MeasuredWidth;
             Rectangle play = S(Play, k);
             play.Intersect(new Rectangle(Point.Empty, shot.Size));
-            if (play.Width < 200 || play.Height < 120) return null;
+            if (play.Width < 200 || play.Height < 120) { trace = "the play area is too small"; return null; }
 
             int w = play.Width, h = play.Height;
             var px = new byte[w * h * 4];
@@ -92,26 +100,36 @@ namespace AutoClicker
                 }
             }
             finally { shot.UnlockBits(data); }
+            byte[] solid = Solid(px, w, h);
 
-            Rectangle box = FindBox(px, w, h, (int)Math.Round(BoxW * k), (int)Math.Round(BoxH * k));
-            if (box.IsEmpty) return null;
-            Shape reference = DescribeLargest(px, w, h, box);
-            if (reference == null) return null;
+            box = FindBox(px, w, h, (int)Math.Round(BoxW * k), (int)Math.Round(BoxH * k));
+            if (box.IsEmpty) { trace = "no box found"; return null; }
+            Shape reference = DescribeLargest(solid, w, h, box);
+            if (reference == null) { trace = "box " + box.X + "," + box.Y + " but no shape inside it"; return null; }
 
             Shape best = null;
             Point bestAt = Point.Empty;
             double bestDistance = double.MaxValue;
-            foreach (Blob b in Blobs(px, w, h, box, (int)Math.Round(MinSide * k), (int)Math.Round(MaxSide * k), false))
+            int candidates = 0;
+            foreach (Blob b in Blobs(solid, w, h, box, (int)Math.Round(MinSide * k), (int)Math.Round(MaxSide * k), false))
             {
-                Shape s = Describe(px, w, b);
+                Shape s = Describe(solid, w, b);
                 if (s == null) continue;
-                double distance = SignatureDistance(reference.Signature, s.Signature) + Math.Abs(reference.Hole - s.Hole) * 1.5;
+                candidates++;
+                // The hole only separates a ring from a solid of the same outline, so it stays a small share of the score.
+                double distance = SignatureDistance(reference.Signature, s.Signature) + Math.Abs(reference.Hole - s.Hole) * 0.4;
                 if (distance >= bestDistance) continue;
                 bestDistance = distance;
                 best = s;
                 bestAt = new Point(play.X + b.CentreX, play.Y + b.CentreY);
             }
-            if (best == null || bestDistance > MaxDistance) return null;
+            trace = "box " + box.X + "," + box.Y + ", " + candidates + " candidates, best " +
+                    (best == null ? "none" : bestDistance.ToString("0.000") + " at " + bestAt.X + "," + bestAt.Y);
+            if (best == null || bestDistance > MaxDistance)
+            {
+                trace += " (over " + MaxDistance.ToString("0.00") + ")";
+                return null;
+            }
             return bestAt;
         }
 
@@ -249,10 +267,33 @@ namespace AutoClicker
             return found;
         }
 
-        static bool Inside(byte[] px, int at)
+        /// <summary>The thickened ink mask: hatching, outlines and gaps read as one solid shape.</summary>
+        static byte[] Solid(byte[] px, int w, int h)
         {
-            int o = at * 4;
-            return Ink(px[o + 2], px[o + 1], px[o]);
+            const int Grow = 4;
+            var mask = new byte[w * h];
+            for (int i = 0; i < mask.Length; i++)
+            {
+                int o = i * 4;
+                if (Ink(px[o + 2], px[o + 1], px[o])) mask[i] = 1;
+            }
+            var solid = new byte[w * h];
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    if (mask[y * w + x] == 0) continue;
+                    int y0 = Math.Max(0, y - Grow), y1 = Math.Min(h - 1, y + Grow);
+                    int x0 = Math.Max(0, x - Grow), x1 = Math.Min(w - 1, x + Grow);
+                    for (int ny = y0; ny <= y1; ny++)
+                        for (int nx = x0; nx <= x1; nx++) solid[ny * w + nx] = 1;
+                }
+            return solid;
+        }
+
+        /// <summary>Whether a pixel of the thickened mask is part of a shape.</summary>
+        static bool Inside(byte[] mask, int at)
+        {
+            return mask[at] != 0;
         }
 
         static bool InBox(Rectangle box, int x, int y)
@@ -271,7 +312,10 @@ namespace AutoClicker
             return best == null ? null : Describe(px, w, best);
         }
 
-        /// <summary>Radii every 11.25° from the centre, normalised by their mean, and how much of the blob is a hole.</summary>
+       /// <summary>
+        /// The blob's outer outline: radii every 11.25° from its centre, each taken at the furthest ink along that ray inside the
+        /// blob's own box, so stripes, fills and hollow middles don't matter. Normalised by their mean.
+        /// </summary>
         static Shape Describe(byte[] px, int w, Blob b)
         {
             int cx = b.CentreX, cy = b.CentreY;
@@ -281,13 +325,20 @@ namespace AutoClicker
             {
                 double angle = r * 2 * Math.PI / Rays;
                 double dx = Math.Cos(angle), dy = Math.Sin(angle);
+                // Stop at the blob's own box, so a neighbour further out can't pass for this outline.
+                double maxT = 400;
+                if (dx > 1e-9) maxT = Math.Min(maxT, (b.X1 - cx) / dx);
+                if (dx < -1e-9) maxT = Math.Min(maxT, (b.X0 - cx) / dx);
+                if (dy > 1e-9) maxT = Math.Min(maxT, (b.Y1 - cy) / dy);
+                if (dy < -1e-9) maxT = Math.Min(maxT, (b.Y0 - cy) / dy);
+                maxT = Math.Min(maxT + 2, 400);
+
                 double last = 0;
-                for (double t = 1; t < 200; t += 0.5)
+                for (double t = 1; t <= maxT; t += 0.5)
                 {
                     int x = (int)Math.Round(cx + dx * t), y = (int)Math.Round(cy + dy * t);
                     if (x < 0 || y < 0 || x >= w) break;
-                    if (!Inside(px, y * w + x)) break;
-                    last = t;
+                    if (Inside(px, y * w + x)) last = t;   // the furthest ink, not the first gap
                 }
                 if (last <= 0) return null;
                 radii[r] = last;
