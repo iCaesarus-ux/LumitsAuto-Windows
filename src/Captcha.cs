@@ -39,6 +39,8 @@ namespace AutoClicker
         {
             public double[] Signature;
             public double Fill;
+            public double Point;
+            public int W, H;
         }
 
         static Rectangle S(Rectangle r, double k)
@@ -108,6 +110,11 @@ namespace AutoClicker
 
             box = FindBox(px, w, h, (int)Math.Round(BoxW * k), (int)Math.Round(BoxH * k));
             if (box.IsEmpty) { trace = "no box found"; return null; }
+            // Clear the box's own white border from the mask: it would otherwise be the reference itself, or bridge to it.
+            for (int y = Math.Max(0, box.Y - 4); y < Math.Min(h, box.Bottom + 4); y++)
+                for (int x = Math.Max(0, box.X - 4); x < Math.Min(w, box.Right + 4); x++)
+                    if (x < box.X + 8 || x > box.Right - 8 || y < box.Y + 8 || y > box.Bottom - 8)
+                        solid[y * w + x] = 0;
             Shape reference = DescribeLargest(solid, w, h, box);
             if (reference == null) { trace = "box " + box.X + "," + box.Y + " but no shape inside it"; return null; }
 
@@ -122,15 +129,18 @@ namespace AutoClicker
                 if (s == null) continue;
                 candidates++;
                 // The fill only says solid or hollow, so it stays a small share of the score; the outline leads.
-                double distance = SignatureDistance(reference.Signature, s.Signature) + Math.Abs(reference.Fill - s.Fill) * 0.08;
+                double distance = SignatureDistance(reference.Signature, s.Signature)
+                                + Math.Abs(reference.Fill - s.Fill) * 0.08
+                                + Math.Abs(reference.Point - s.Point) * 0.6;
                 shown.Add(new KeyValuePair<double, string>(distance,
-                    "(" + (play.X + b.CentreX) + "," + (play.Y + b.CentreY) + " f" + s.Fill.ToString("0.00") + " d" + distance.ToString("0.000") + ")"));
+                    "(" + (play.X + b.CentreX) + "," + (play.Y + b.CentreY) + " f" + s.Fill.ToString("0.00") + " p" + s.Point.ToString("0.00") + " d" + distance.ToString("0.000") + ")"));
                 if (distance >= bestDistance) continue;
                 bestDistance = distance;
                 best = s;
                 bestAt = new Point(play.X + b.CentreX, play.Y + b.CentreY);
             }
-            trace = "box " + box.X + "," + box.Y + ", " + candidates + " candidates, best " +
+            trace = "box " + box.X + "," + box.Y + ", ref f" + reference.Fill.ToString("0.00") + " p" + reference.Point.ToString("0.00") +
+                    " " + reference.W + "x" + reference.H + ", " + candidates + " candidates, best " +
                     (best == null ? "none" : bestDistance.ToString("0.000") + " at " + bestAt.X + "," + bestAt.Y);
             shown.Sort((p, q) => p.Key.CompareTo(q.Key));
             for (int i = 0; i < shown.Count && i < 12; i++) trace += " " + shown[i].Value;
@@ -404,14 +414,18 @@ namespace AutoClicker
             return !box.IsEmpty && x >= box.X - 4 && x <= box.Right + 4 && y >= box.Y - 4 && y <= box.Bottom + 4;
         }
 
-        /// <summary>The biggest shape inside the box.</summary>
+        /// <summary>The biggest shape inside the box, not counting the box's own border.</summary>
         static Shape DescribeLargest(byte[] px, int w, int h, Rectangle box)
         {
             Rectangle inner = box;
             inner.Inflate(-10, -10);
             Blob best = null;
             foreach (Blob b in Blobs(px, w, h, inner, 20, Math.Max(box.Width, box.Height), true))
+            {
+                // The white border comes through as one huge ring round everything, so anything nearly as big as the box is it.
+                if (b.X1 - b.X0 + 1 > inner.Width * 0.8 && b.Y1 - b.Y0 + 1 > inner.Height * 0.8) continue;
                 if (best == null || b.Area > best.Area) best = b;
+            }
             return best == null ? null : Describe(px, w, best);
         }
 
@@ -449,11 +463,20 @@ namespace AutoClicker
             }
             double mean = sum / Rays;
             if (mean <= 0) return null;
+            double spread = 0;
+            for (int r = 0; r < Rays; r++)
+            {
+                double d = radii[r] - mean;
+                spread += d * d;
+            }
             for (int r = 0; r < Rays; r++) radii[r] /= mean;
             return new Shape
             {
                 Signature = radii,
-                Fill = b.Area / (double)((b.X1 - b.X0 + 1) * (b.Y1 - b.Y0 + 1))
+                Point = Math.Sqrt(spread / Rays) / mean,
+                Fill = b.Area / (double)((b.X1 - b.X0 + 1) * (b.Y1 - b.Y0 + 1)),
+                W = b.X1 - b.X0 + 1,
+                H = b.Y1 - b.Y0 + 1
             };
         }
 

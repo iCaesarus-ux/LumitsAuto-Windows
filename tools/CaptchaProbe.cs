@@ -31,7 +31,7 @@ static class CaptchaProbe
                 using (Graphics g = Graphics.FromImage(shot))
                 {
                     if (!box.IsEmpty)
-                        g.DrawRectangle(Pens.Cyan, (int)Math.Round(602 * k) + box.X, (int)Math.Round(331 * k) + box.Y, box.Width, box.Height);
+                        g.DrawRectangle(Pens.Cyan, (int)Math.Round(602 * k) + box.X, (int)Math.Round(200 * k) + box.Y, box.Width, box.Height);
                     if (at.HasValue)
                     {
                         g.DrawEllipse(Pens.Lime, at.Value.X - 18, at.Value.Y - 18, 36, 36);
