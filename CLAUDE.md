@@ -78,6 +78,15 @@ says how it's used. Split from LumitsAuto, which also holds the Android app (not
   after the run". While nothing fits, the status and the stop say the closest step (`Closest`: "step 1 closest, 64% of
   80%") and why there was no retake. The owner was advised to have step 1 watch the map's bottom bar (Team … Settings,
   map only, interface so the night doesn't change it). Not run in the game yet.
+- **No retake behind the captcha (15 November, owner's screenshot of the "Quick check" over the map,
+  `tests/pictures/pc/captcha-quick-check.png`, against `map-forest.png`, a read-only capture the same morning):** the
+  game darkens everything behind its panels, the bottom bar to red 0.51, green 0.48, blue 0.48: 0% as taken, 96%
+  through `Snapshot.DimmedSimilarity` (every colour kept within 0.15 of the others, between 0.2 and 0.8; a colour the
+  picture barely has is left out; the night gives 0). Step 1's spot (the bush) lies on the captcha's shapes, so
+  `ClickEngine.BehindAPanel` (the existing `Captcha.Showing`, or step 1's picture fitting evenly darkened) stops
+  `RetakeFirstStep`, before and after its second of stillness. `Captcha.Showing` read the screenshot right only with
+  the game placed within 2 px (its grey margin is 65/78/69 there, a spread of 13 against its limit of 14), which is
+  why the darkened check is there too. Tests: `BehindTheCaptcha` (real pictures) and a pretend panel run.
 - **The owner's settings save fine; Claude's tools see an old copy (15 November).** The Claude desktop app is a
   Windows package, and Windows gives packaged apps a private AppData: a `settings.txt` written from inside Claude on
   30 October lives in `%LOCALAPPDATA%\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\AutoClicker\`, and tools run

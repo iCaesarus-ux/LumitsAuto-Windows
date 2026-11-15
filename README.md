@@ -58,19 +58,25 @@ is really on:
 - if after a retake no other step's screen comes up within two more time-outs (60 s by default),
   the game is somewhere the steps don't know: the run stops and always alerts your phone ("Stuck on
   an unknown screen", with a screenshot), whatever *Also when a run stops by itself* says. Note that
-  this means step 1's spot is clicked once on whatever that screen is (a captcha too);
+  this means step 1's spot is clicked once on whatever that screen is;
+- no retake, so no click, while the game's captcha ("Quick check") is up, or while the map shows but
+  evenly darkened, as the game darkens everything behind a panel it puts up. Step 1's spot would land
+  on the captcha's shapes. Behind the captcha your map's bottom bar keeps about half of each colour:
+  0% against a picture taken without it, 96% evenly darkened. The night isn't taken for this: it
+  keeps far more blue than red;
 - while nothing fits, the status line says which step's picture comes closest, e.g. "no known
   screen (step 1 closest, 64% of 80%), looking 2/3". When step 1's picture can't be retaken (the
-  screen keeps changing, or step 1 doesn't wait for a screen), it keeps looking for three of the
-  step's time-outs (about 90 s by default) and only then stops, saying the closest step and why there
-  was no retake, and sending a screenshot to your phone.
+  screen keeps changing, a captcha, or step 1 doesn't wait for a screen), it keeps looking for three
+  of the step's time-outs (about 90 s by default) and only then stops, saying the closest step and
+  why there was no retake, and sending a screenshot to your phone.
 
 **Step 1's picture:** step 1 tells the app the map is showing. If it watches the spot it clicks and
 your character stands there after walking to it, the picture fits only when the character happens to
 stand elsewhere. It's steadier to have step 1 watch something only the map has and your character
 can't cover: in the step's settings, under *Wait for screen*, **Pick area…** and drag over the map's
 bottom bar (Team, Bag, Dex, PvP, Friends, Guild, Settings). The game's night doesn't change its
-buttons, and step 1 still clicks the same spot.
+buttons, and step 1 still clicks the same spot. With the captcha up the bar is darkened and scores
+0%, so step 1 isn't taken for showing then.
 
 ## Alerts (radiants and stops)
 

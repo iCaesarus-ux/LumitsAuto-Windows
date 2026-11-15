@@ -196,6 +196,50 @@ namespace AutoClicker
             return atNight;
         }
 
+        /// <summary>
+        /// How well <paramref name="live"/> fits this snapshot evenly darkened, as the game darkens everything behind a panel it
+        /// puts up: its captcha, measured on 15 November on the map's bottom bar, kept red 0.51, green 0.48, blue 0.48. 0 unless
+        /// every colour kept about as much as the others (within 0.15), between a fifth and four fifths: the night keeps far
+        /// more blue than red, so it isn't this.
+        /// </summary>
+        public double DimmedSimilarity(Snapshot live, bool[] mask)
+        {
+            if (live == null || live.Width != Width || live.Height != Height) return 0;
+            if (mask != null && mask.Length != Width * Height) mask = null;
+            var mineMine = new double[3];
+            var mineTheirs = new double[3];
+            int n = 0;
+            for (int i = 0; i < Width * Height; i++)
+            {
+                if (mask != null && !mask[i]) continue;
+                n++;
+                for (int c = 0; c < 3; c++)
+                {
+                    double a = rgb[i * 3 + c];
+                    mineMine[c] += a * a;
+                    mineTheirs[c] += a * live.rgb[i * 3 + c];
+                }
+            }
+            // A colour the picture barely has (under 8 of 255 on average) says nothing about how the light changed.
+            var gain = new double[3];
+            double lo = double.MaxValue, hi = double.MinValue, sum = 0;
+            int known = 0;
+            for (int c = 0; c < 3; c++)
+            {
+                if (mineMine[c] <= 64.0 * n) continue;
+                gain[c] = mineTheirs[c] / mineMine[c];
+                lo = Math.Min(lo, gain[c]);
+                hi = Math.Max(hi, gain[c]);
+                sum += gain[c];
+                known++;
+            }
+            if (known == 0 || lo < 0.2 || hi > 0.8 || hi - lo > 0.15) return 0;
+            for (int c = 0; c < 3; c++)
+                if (mineMine[c] <= 64.0 * n) gain[c] = sum / known;
+            bool flat = mask == null ? plain : IsPlainWithin(mask);
+            return Compare(live, mask, flat, gain, null);
+        }
+
         /// <summary>The light has to have changed by at least this much (red's gain, 1 minus it) for the night to be tried.</summary>
         const double NightFrom = 0.15;
         /// <summary>
@@ -214,9 +258,11 @@ namespace AutoClicker
             var mineMine = new double[3];
             var mineTheirs = new double[3];
             var theirsTheirs = new double[3];
+            int n = 0;
             for (int i = 0; i < Width * Height; i++)
             {
                 if (mask != null && !mask[i]) continue;
+                n++;
                 for (int c = 0; c < 3; c++)
                 {
                     double a = rgb[i * 3 + c], b = live.rgb[i * 3 + c];
@@ -233,6 +279,10 @@ namespace AutoClicker
             double lost = 1 - gain[0];
             darker = lighter ? -lost : lost;
             nightLike = lost > 1e-6 ? (gain[2] - gain[0]) / lost : 0;
+            // Without red or blue to speak of (under 8 of 255 on average, either side) there's no telling the night from any
+            // other darkening: an olive area darkened evenly behind a panel looked "blue kept" only because it had no blue.
+            double little = 64.0 * n;
+            if (mineMine[0] <= little || mineMine[2] <= little || theirsTheirs[0] <= little || theirsTheirs[2] <= little) nightLike = 0;
         }
 
         /// <summary>

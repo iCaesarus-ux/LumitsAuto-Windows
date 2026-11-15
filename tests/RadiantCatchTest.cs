@@ -32,7 +32,7 @@ namespace AutoClicker
         /// <summary>The pretend game: shows a picture for each screen, and reacts to clicks.</summary>
         class Game : Form
         {
-            public enum Screen { Map, Turn, Wait, Fainted, Caught, Victory, Unknown }
+            public enum Screen { Map, Turn, Wait, Fainted, Caught, Victory, Unknown, Panel }
 
             public double MaxHp = 118, Hp = 118, StrikeDamage = 20, CaptureChance = 1;
             public double[] ScriptedCrits;
@@ -87,6 +87,27 @@ namespace AutoClicker
 
             protected override bool ShowWithoutActivation { get { return true; } }
 
+            /// <summary>
+            /// A colour going round the colour wheel every 1.7 s. Any two of its colours 0.95 to 1.3 s apart (the retake's check for a
+            /// still screen) match at 1% at most; a red-only change matched at 80% to 83% as daybreak, so it held still to the app.
+            /// </summary>
+            static Color HueWheel(long ms)
+            {
+                double h = (ms % 1700) / 1700.0 * 6;
+                int i = (int)h;
+                double f = h - i;
+                int v = 220, p = 30, q = (int)(220 - 190 * f), u = (int)(30 + 190 * f);
+                switch (i % 6)
+                {
+                    case 0: return Color.FromArgb(v, u, p);
+                    case 1: return Color.FromArgb(q, v, p);
+                    case 2: return Color.FromArgb(p, v, u);
+                    case 3: return Color.FromArgb(p, q, v);
+                    case 4: return Color.FromArgb(u, p, v);
+                    default: return Color.FromArgb(v, p, q);
+                }
+            }
+
             public void Redraw()
             {
                 lock (sync)
@@ -128,10 +149,16 @@ namespace AutoClicker
                         case Screen.Unknown:
                             // A screen none of the steps know, that clicks don't get past.
                             if (Flicker)
-                                using (var b = new SolidBrush(Color.FromArgb((int)(clock.ElapsedMilliseconds / 10 % 256), 40, 90)))
+                                using (var b = new SolidBrush(HueWheel(clock.ElapsedMilliseconds)))
                                     g.FillRectangle(b, 0, 0, 1920, 1025);
                             else g.FillRectangle(Brushes.DarkSlateBlue, 0, 0, 1920, 1025);
                             g.FillRectangle(Brushes.White, 760, 400, 400, 60);
+                            break;
+                        case Screen.Panel:
+                            // Like the game's captcha: the map behind darkened to half, a panel in front over step 1's spot.
+                            g.FillRectangle(Brushes.Olive, 0, 0, 1920, 1025);
+                            using (var shade = new SolidBrush(Color.FromArgb(128, 0, 0, 0))) g.FillRectangle(shade, 0, 0, 1920, 1025);
+                            g.FillRectangle(Brushes.DimGray, 572, 190, 776, 643);
                             break;
                         case Screen.Victory:
                             g.FillRectangle(Brushes.Teal, 0, 0, 1920, 1025);
@@ -254,6 +281,9 @@ namespace AutoClicker
                         break;
                     case Screen.Unknown:
                         Other.Add("unknown screen (" + p.X + "," + p.Y + ")");
+                        break;
+                    case Screen.Panel:
+                        Other.Add("panel (" + p.X + "," + p.Y + ")");
                         break;
                     case Screen.Victory:
                         // The step's Continue.
@@ -575,6 +605,40 @@ namespace AutoClicker
         }
 
         /// <summary>
+        /// The game's captcha ("Quick check", the owner's screenshot of 15 November) darkens the map behind its panel. A step 1
+        /// watching the map's bottom bar mustn't match then, and the map must be seen as there but darkened, so step 1's picture
+        /// isn't retaken and its spot (under the panel's shapes) isn't clicked. The night mustn't look like that.
+        /// </summary>
+        static void BehindTheCaptcha(string dir)
+        {
+            Console.WriteLine("\n== The map behind the game's captcha");
+            Bitmap map = Load(dir, "map-forest.png"), captcha = Load(dir, "captcha-quick-check.png");
+            Bitmap day = Load(dir, "map-day.png"), night = Load(dir, "map-night.png");
+            if (map == null || captcha == null || day == null || night == null)
+            {
+                Check(false, "map-forest.png, captcha-quick-check.png, map-day.png and map-night.png must be beside radiant.jpg");
+                return;
+            }
+            using (map)
+            using (captcha)
+            using (day)
+            using (night)
+            {
+                foreach (string[] a in new[] { new[] { "The bottom bar", "1414", "930", "490", "80" }, new[] { "Its Team button", "1440", "950", "60", "50" }, new[] { "The Chat button", "16", "940", "70", "70" } })
+                {
+                    var r = new Rectangle(int.Parse(a[1]), int.Parse(a[2]), int.Parse(a[3]), int.Parse(a[4]));
+                    Snapshot taken = Snapshot.FromBitmap(map, r), now = Snapshot.FromBitmap(captcha, r);
+                    double asTaken = taken.Similarity(now), dimmed = taken.DimmedSimilarity(now, null), itself = taken.DimmedSimilarity(Snapshot.FromBitmap(map, r), null);
+                    Check(asTaken < 0.5 && dimmed >= 0.85 && itself == 0,
+                          a[0] + " with the captcha up: " + Math.Round(asTaken * 100) + "% as taken, " + Math.Round(dimmed * 100) + "% evenly darkened (without it: " + Math.Round(itself * 100) + "%)");
+                }
+                Check(Captcha.Showing(captcha) && !Captcha.Showing(map), "The captcha check sees the captcha, and not the plain map");
+                Snapshot stone = Snapshot.FromBitmap(day, new Rectangle(266, 122, 44, 60)), stoneAtNight = Snapshot.FromBitmap(night, new Rectangle(1016, 198, 44, 60));
+                Check(stone.DimmedSimilarity(stoneAtNight, null) == 0, "The night isn't taken for the map darkened behind a panel (" + Math.Round(stone.Similarity(stoneAtNight) * 100) + "% as the night)");
+            }
+        }
+
+        /// <summary>
         /// Nothing the steps know shows up for a time-out: step 1's picture is retaken from the screen and step 1 clicked. Another
         /// step's screen coming up after shows the game was on the map, only looking different; none coming up stops the run.
         /// Retaken pictures count beside the step's own for the rest of the run, and each new stuck spell gets its own.
@@ -639,6 +703,12 @@ namespace AutoClicker
                   "A screen that never holds still isn't retaken or clicked; the stop says which step came closest, and why");
             Check(moving.Activity.Any(a => a.StartsWith("no known screen (step ") && a.Contains("% of 80%), looking 2/3")),
                   "Meanwhile the status line says which step's picture comes closest");
+
+            // The game's captcha darkens the map behind its panel, and step 1's spot lies on the shapes to pick from.
+            Played panel = Play(g => { g.State = Game.Screen.Panel; g.Radiant = false; g.NextFights.Enqueue(false); }, timeoutSec: 3);
+            Console.WriteLine("      " + panel.Result.Problem + "; clicked: " + string.Join(", ", panel.Game.Other));
+            Check(panel.Game.Other.Count == 0 && panel.Result.Problem != null && panel.Result.Problem.Contains("wasn't retaken: the map is darkened behind something"),
+                  "The map darkened behind a panel, as by the captcha: step 1's picture isn't retaken and nothing is clicked on the panel");
 
             Console.WriteLine("\n== Radiants only: after a run, the map with someone on step 1's spot (time-outs of 30 s)");
             Played ran = Play(g => { g.Standing = true; g.Radiant = false; g.NextFights.Enqueue(false); }, c => c.RadiantsOnly = true, runStep: true, timeoutSec: 30);
@@ -801,6 +871,7 @@ namespace AutoClicker
 
                 string dir = Path.GetDirectoryName(Path.GetFullPath(args[0]));
                 NightLight(dir);
+                BehindTheCaptcha(dir);
 
                 Console.WriteLine("\n== The window's text fits");
                 using (var font = new Font("Segoe UI", 9F))

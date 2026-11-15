@@ -1525,6 +1525,7 @@ namespace AutoClicker
             else if (retakenAt >= 0) why = "the last retake hasn't been shown right yet";
             else if (!o.Points.Skip(1).Any(s => s.Waits)) why = "no other step waits for a screen, to show it worked";
             else if (radiantCycle == cycle && !radiantCaught) why = "a radiant's fight is on"; // nothing is clicked on a hunch then
+            else why = BehindAPanel();
             if (why != null) return false;
             // Only a screen that holds still: one fading in or out would be taken halfway.
             Snapshot before = ReadArea(first.WatchArea);
@@ -1533,12 +1534,31 @@ namespace AutoClicker
             if (before == null || now == null) why = "the screen couldn't be read";
             else if (before.Similarity(now, first.WatchMask()) * 100 < first.MatchPercent) why = "the screen kept changing";
             else if (o.Points.Any(s => s.Waits && Matches(s))) why = "a step's screen came up after all";
+            else why = BehindAPanel(); // it may have come up during that second
             if (why != null) return false;
             firstStepExtra.Add(now);
             if (firstStepExtra.Count > MaxExtraPictures) firstStepExtra.RemoveAt(0);
             retakenAt = clock.ElapsedMilliseconds;
             SetActivity("nothing known for " + stuckFor + ": step 1's picture retaken (" + firstStepExtra.Count + " this run), clicking it");
             return true;
+        }
+
+        /// <summary>
+        /// Why step 1's picture mustn't be retaken and clicked now: the game has put a panel up and darkened everything behind it,
+        /// as with its captcha ("Quick check"), where step 1's spot would land on the shapes to pick from. Seen by the captcha
+        /// check, or by step 1's screen being there but evenly darker (on 15 November the captcha kept half of each colour of
+        /// the map's bottom bar: 0% as taken, 96% evenly darkened). Null when neither.
+        /// </summary>
+        string BehindAPanel()
+        {
+            if (window != null && Captcha.Showing(CurrentFrame())) return "a captcha is showing";
+            ClickPoint first = o.Points[0];
+            Snapshot live = ReadArea(first.WatchArea);
+            if (live == null) return null;
+            bool[] mask = first.WatchMask();
+            bool dimmed = first.Snapshot.DimmedSimilarity(live, mask) * 100 >= first.MatchPercent ||
+                          firstStepExtra.Any(s => s.DimmedSimilarity(live, mask) * 100 >= first.MatchPercent);
+            return dimmed ? "the map is darkened behind something, a captcha or a message" : null;
         }
 
         /// <summary>After step 1's picture was retaken and clicked, another step's screen came up: the game wasn't stuck.</summary>
