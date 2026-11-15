@@ -18,10 +18,11 @@ namespace AutoClicker
         /// <summary>The window width the coordinates below were measured at.</summary>
         const int MeasuredWidth = 1920;
 
-        static readonly Rectangle Play = new Rectangle(602, 331, 720, 432);
+        static readonly Rectangle Play = new Rectangle(602, 200, 720, 520);
         const int BoxW = 150, BoxH = 148;
-        const int MinSide = 34, MaxSide = 104, MinArea = 350;
+        const int MinSide = 34, MaxSide = 130, MinArea = 350;
         const int Rays = 36;
+        const int BlurRadius = 8, EdgeMin = 20, Grow = 2, MaxHole = 1200;
 
         /// <summary>How unlike the reference the best candidate may be; above this it gives up rather than guess.</summary>
         const double MaxDistance = 0.48;
@@ -37,7 +38,7 @@ namespace AutoClicker
         sealed class Shape
         {
             public double[] Signature;
-            public double Hole;
+            public double Fill;
         }
 
         static Rectangle S(Rectangle r, double k)
@@ -46,11 +47,14 @@ namespace AutoClicker
                                  (int)Math.Round(r.Width * k), (int)Math.Round(r.Height * k));
         }
 
-        /// <summary>A pixel bright or coloured enough to be a shape; the dull background masses are below this.</summary>
+       /// <summary>
+        /// A pixel bright and coloured enough to be a shape. Every background mass is darker than every real shape, so the
+        /// masses drop out and stop welding the shapes drawn over them into one blob.
+        /// </summary>
         static bool Ink(int r, int g, int b)
         {
             int mx = Math.Max(r, Math.Max(g, b)), mn = Math.Min(r, Math.Min(g, b));
-            return mx >= 90 && (mx - mn >= 80 || mx >= 190);
+            return mx >= 190 && (mx - mn >= 50 || mx >= 225);
         }
 
         /// <summary>Whether the panel is up: three pixels of its top margin are plain light grey and the play area is dark.</summary>
@@ -68,7 +72,7 @@ namespace AutoClicker
             }
             Rectangle play = S(Play, k);
             if (play.Right >= shot.Width || play.Bottom >= shot.Height) return false;
-            return shot.GetPixel(play.X + 4, play.Y + 4).GetBrightness() < 0.45;
+            return shot.GetPixel(play.X + 8, play.Y + 90).GetBrightness() < 0.45;
         }
 
         /// <summary>The shape to tap, in game-window coordinates, or null if none could be told apart.</summary>
@@ -111,13 +115,16 @@ namespace AutoClicker
             Point bestAt = Point.Empty;
             double bestDistance = double.MaxValue;
             int candidates = 0;
+            var shown = new List<KeyValuePair<double, string>>();
             foreach (Blob b in Blobs(solid, w, h, box, (int)Math.Round(MinSide * k), (int)Math.Round(MaxSide * k), false))
             {
                 Shape s = Describe(solid, w, b);
                 if (s == null) continue;
                 candidates++;
-                // The hole only separates a ring from a solid of the same outline, so it stays a small share of the score.
-                double distance = SignatureDistance(reference.Signature, s.Signature) + Math.Abs(reference.Hole - s.Hole) * 0.4;
+                // The fill only says solid or hollow, so it stays a small share of the score; the outline leads.
+                double distance = SignatureDistance(reference.Signature, s.Signature) + Math.Abs(reference.Fill - s.Fill) * 0.08;
+                shown.Add(new KeyValuePair<double, string>(distance,
+                    "(" + (play.X + b.CentreX) + "," + (play.Y + b.CentreY) + " f" + s.Fill.ToString("0.00") + " d" + distance.ToString("0.000") + ")"));
                 if (distance >= bestDistance) continue;
                 bestDistance = distance;
                 best = s;
@@ -125,6 +132,8 @@ namespace AutoClicker
             }
             trace = "box " + box.X + "," + box.Y + ", " + candidates + " candidates, best " +
                     (best == null ? "none" : bestDistance.ToString("0.000") + " at " + bestAt.X + "," + bestAt.Y);
+            shown.Sort((p, q) => p.Key.CompareTo(q.Key));
+            for (int i = 0; i < shown.Count && i < 12; i++) trace += " " + shown[i].Value;
             if (best == null || bestDistance > MaxDistance)
             {
                 trace += " (over " + MaxDistance.ToString("0.00") + ")";
@@ -262,32 +271,126 @@ namespace AutoClicker
                     if (b.Area < MinArea || bw < minSide || bh < minSide || bw > maxSide || bh > maxSide) continue;
                     if (!inside && (b.X0 == 0 || b.Y0 == 0 || b.X1 == w - 1 || b.Y1 == h - 1)) continue;
                     if (bw > bh * 2.4 || bh > bw * 2.4) continue;
+                    if (!inside && b.Area < bw * bh * 0.12) continue;
                     found.Add(b);
                 }
             return found;
         }
 
-        /// <summary>The thickened ink mask: hatching, outlines and gaps read as one solid shape.</summary>
+        /// <summary>
+        /// The ink mask, from local contrast rather than colour: every pixel that stands out against a blurred copy of the panel.
+        /// Soft translucent masses and the panel itself have no edges and drop out, while shapes, their hatching and their
+        /// outlines do have them. Gaps are closed and small enclosed pockets filled, so hatching reads as one solid body.
+        /// </summary>
         static byte[] Solid(byte[] px, int w, int h)
         {
-            const int Grow = 4;
-            var mask = new byte[w * h];
-            for (int i = 0; i < mask.Length; i++)
+            var lum = new byte[w * h];
+            for (int i = 0; i < lum.Length; i++)
             {
                 int o = i * 4;
-                if (Ink(px[o + 2], px[o + 1], px[o])) mask[i] = 1;
+                lum[i] = (byte)((px[o + 2] * 30 + px[o + 1] * 59 + px[o] * 11) / 100);
             }
-            var solid = new byte[w * h];
+
+            // Summed-area table, so each blurred value is a constant-time box sum.
+            int stride = w + 1;
+            var sat = new int[stride * (h + 1)];
+            for (int y = 0; y < h; y++)
+            {
+                int run = 0;
+                for (int x = 0; x < w; x++)
+                {
+                    run += lum[y * w + x];
+                    sat[(y + 1) * stride + x + 1] = sat[y * stride + x + 1] + run;
+                }
+            }
+
+            var mask = new byte[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                int y0 = Math.Max(0, y - BlurRadius), y1 = Math.Min(h - 1, y + BlurRadius);
+                for (int x = 0; x < w; x++)
+                {
+                    int x0 = Math.Max(0, x - BlurRadius), x1 = Math.Min(w - 1, x + BlurRadius);
+                    int area = (x1 - x0 + 1) * (y1 - y0 + 1);
+                    int sum = sat[(y1 + 1) * stride + x1 + 1] - sat[y0 * stride + x1 + 1]
+                            - sat[(y1 + 1) * stride + x0] + sat[y0 * stride + x0];
+                    if (Math.Abs(lum[y * w + x] - sum / area) >= EdgeMin) mask[y * w + x] = 1;
+                }
+            }
+
+            // Drop anything too thin to be a rim: the panel's one-pixel criss-cross lines and their dots.
+            var kept = new byte[w * h];
             for (int y = 0; y < h; y++)
                 for (int x = 0; x < w; x++)
                 {
                     if (mask[y * w + x] == 0) continue;
+                    int n = 0;
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int nx = x + dx, ny = y + dy;
+                            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                            n += mask[ny * w + nx];
+                        }
+                    if (n >= 5) kept[y * w + x] = 1;
+                }
+
+            // Close the gaps in hatching and outlines.
+            var solid = new byte[w * h];
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    if (kept[y * w + x] == 0) continue;
                     int y0 = Math.Max(0, y - Grow), y1 = Math.Min(h - 1, y + Grow);
                     int x0 = Math.Max(0, x - Grow), x1 = Math.Min(w - 1, x + Grow);
                     for (int ny = y0; ny <= y1; ny++)
                         for (int nx = x0; nx <= x1; nx++) solid[ny * w + nx] = 1;
                 }
+
+            FillHoles(solid, w, h);
             return solid;
+        }
+
+        /// <summary>Fills pockets fully enclosed by a blob, except big ones, which are a ring's or a crescent's middle.</summary>
+        static void FillHoles(byte[] solid, int w, int h)
+        {
+            var outside = new bool[w * h];
+            var stack = new Stack<int>();
+            for (int x = 0; x < w; x++) { stack.Push(x); stack.Push((h - 1) * w + x); }
+            for (int y = 0; y < h; y++) { stack.Push(y * w); stack.Push(y * w + w - 1); }
+            while (stack.Count > 0)
+            {
+                int i = stack.Pop();
+                if (i < 0 || i >= outside.Length || outside[i] || solid[i] != 0) continue;
+                outside[i] = true;
+                int ix = i % w, iy = i / w;
+                if (ix > 0) stack.Push(i - 1);
+                if (ix < w - 1) stack.Push(i + 1);
+                if (iy > 0) stack.Push(i - w);
+                if (iy < h - 1) stack.Push(i + w);
+            }
+
+            var hole = new List<int>();
+            var seen = new bool[w * h];
+            for (int start = 0; start < solid.Length; start++)
+            {
+                if (solid[start] != 0 || outside[start] || seen[start]) continue;
+                hole.Clear();
+                stack.Push(start);
+                seen[start] = true;
+                while (stack.Count > 0)
+                {
+                    int i = stack.Pop();
+                    hole.Add(i);
+                    int ix = i % w, iy = i / w;
+                    if (ix > 0 && solid[i - 1] == 0 && !outside[i - 1] && !seen[i - 1]) { seen[i - 1] = true; stack.Push(i - 1); }
+                    if (ix < w - 1 && solid[i + 1] == 0 && !outside[i + 1] && !seen[i + 1]) { seen[i + 1] = true; stack.Push(i + 1); }
+                    if (iy > 0 && solid[i - w] == 0 && !outside[i - w] && !seen[i - w]) { seen[i - w] = true; stack.Push(i - w); }
+                    if (iy < h - 1 && solid[i + w] == 0 && !outside[i + w] && !seen[i + w]) { seen[i + w] = true; stack.Push(i + w); }
+                }
+                if (hole.Count > MaxHole) continue;
+                foreach (int i in hole) solid[i] = 1;
+            }
         }
 
         /// <summary>Whether a pixel of the thickened mask is part of a shape.</summary>
@@ -347,7 +450,11 @@ namespace AutoClicker
             double mean = sum / Rays;
             if (mean <= 0) return null;
             for (int r = 0; r < Rays; r++) radii[r] /= mean;
-            return new Shape { Signature = radii, Hole = HoleShare(px, w, b) };
+            return new Shape
+            {
+                Signature = radii,
+                Fill = b.Area / (double)((b.X1 - b.X0 + 1) * (b.Y1 - b.Y0 + 1))
+            };
         }
 
         /// <summary>How much of the blob's box is background fully enclosed by it: a ring or a hollow shape scores high.</summary>
@@ -377,17 +484,28 @@ namespace AutoClicker
             return inside <= 0 ? 0 : inside / (double)(bw * bh);
         }
 
-        /// <summary>Mean difference of two outlines at their best rotation.</summary>
+        /// <summary>
+        /// How unlike two outlines are at their best rotation: half the mean difference and half the worst quarter of it, so
+        /// corners and points count for much more than an even edge does.
+        /// </summary>
         static double SignatureDistance(double[] a, double[] b)
         {
-            double best = double.MaxValue;
+            int bestShift = 0;
+            double bestSum = double.MaxValue;
             for (int shift = 0; shift < Rays; shift++)
             {
                 double sum = 0;
                 for (int i = 0; i < Rays; i++) sum += Math.Abs(a[i] - b[(i + shift) % Rays]);
-                if (sum < best) best = sum;
+                if (sum < bestSum) { bestSum = sum; bestShift = shift; }
             }
-            return best / Rays;
+
+            var diffs = new double[Rays];
+            for (int i = 0; i < Rays; i++) diffs[i] = Math.Abs(a[i] - b[(i + bestShift) % Rays]);
+            Array.Sort(diffs);
+            int worst = Math.Max(3, Rays / 4);
+            double top = 0;
+            for (int i = Rays - worst; i < Rays; i++) top += diffs[i];
+            return 0.5 * (bestSum / Rays) + 0.5 * (top / worst);
         }
 
         /// <summary>Keeps the frame and the choice for tuning, in captchas beside the settings.</summary>
