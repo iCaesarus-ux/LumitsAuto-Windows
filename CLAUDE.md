@@ -1,7 +1,8 @@
 # Lumits Auto Clicker (Windows)
 
 A Windows auto clicker for the game **Lumits**: `AutoClicker.exe`, built from `src/` by `build.cmd`. `README.md`
-says how it's used. Split from LumitsAuto, which also holds the Android app (not in this repository).
+says how it's used. Split from LumitsAuto, which also holds the Android app (not in this repository). Since
+15 November 2026 this repository is the only one being worked on: leave LumitsAuto and the phone app alone.
 
 ## Rules from the owner
 
@@ -9,6 +10,12 @@ says how it's used. Split from LumitsAuto, which also holds the Android app (not
 - Never put the owner's Discord webhook or ntfy topic in this repository. The app keeps them in
   `%APPDATA%\AutoClicker`, with its other settings.
 - Tests must not move the real pointer.
+- Commit finished pieces as they land, and as soon as a usage-limit warning shows, commit and push `main` to
+  github.com/iCaesarus-ux/LumitsAuto-Windows before anything else, with "Where things stand" below kept current:
+  several Claude accounts work on this through that repository.
+- Cap every test run at 5 minutes (`timeout 300 ...` from Git Bash), one test at a time, not chained in one command.
+  If one hits the cap, say so rather than rerunning it for longer. The radiant test takes about 100 s, the 2v2 test
+  about 10 s.
 
 ## Building and code
 
