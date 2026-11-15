@@ -17,8 +17,11 @@ set "WM=%WINDIR%\System32\WinMetadata"
 "%CSC%" /nologo /target:winexe /optimize+ /out:AutoClicker.exe ^
   /win32icon:assets\app.ico /resource:assets\app.ico,AutoClicker.app.ico ^
   /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:"%FW%System.Runtime.dll" ^
+  /r:"%~dp0lib\OpenCvSharp.dll" ^
   /r:"%WM%\Windows.Foundation.winmd" /r:"%WM%\Windows.Media.winmd" /r:"%WM%\Windows.Graphics.winmd" ^
   /r:"%WM%\Windows.Globalization.winmd" /r:"%WM%\Windows.Storage.winmd" ^
   src\*.cs
 if errorlevel 1 exit /b 1
+copy /y "%~dp0lib\OpenCvSharp.dll" . >nul
+copy /y "%~dp0lib\OpenCvSharpExtern.dll" . >nul
 echo Built AutoClicker.exe

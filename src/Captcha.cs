@@ -5,6 +5,8 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using Mat = OpenCvSharp.Mat;
+using MatType = OpenCvSharp.MatType;
 
 namespace AutoClicker
 {
@@ -20,7 +22,7 @@ namespace AutoClicker
 
         static readonly Rectangle Play = new Rectangle(602, 200, 720, 520);
         const int BoxW = 150, BoxH = 148;
-        const int MinSide = 34, MaxSide = 130, MinArea = 350;
+        const int MinSide = 26, MaxSide = 130, MinArea = 350;
         const int Rays = 36;
         const int BlurRadius = 8, EdgeMin = 20, Grow = 2, MaxHole = 6000;
 
@@ -49,17 +51,17 @@ namespace AutoClicker
                                  (int)Math.Round(r.Width * k), (int)Math.Round(r.Height * k));
         }
 
-       /// <summary>
-        /// A pixel bright and coloured enough to be a shape. Every background mass is darker than every real shape, so the
-        /// masses drop out and stop welding the shapes drawn over them into one blob.
+        /// <summary>
+        /// A pixel saturated enough, or near-white, to be a shape. The translucent masses, the pale shapes over them and the
+        /// pale criss-cross lines are all desaturated, so they drop out; real shapes are saturated, and a white outline passes.
         /// </summary>
         static bool Ink(int r, int g, int b)
         {
             int mx = Math.Max(r, Math.Max(g, b)), mn = Math.Min(r, Math.Min(g, b));
-            return mx >= 190 && (mx - mn >= 50 || mx >= 225);
+            return mx >= 160 && (mx - mn >= 45 || mx >= 240);
         }
 
-        /// <summary>Whether the panel is up: three pixels of its top margin are plain light grey and the play area is dark.</summary>
+        /// <summary>Whether the panel is up: three pixels of its top strip are flat grey (whatever shade the map behind makes it) and the play area is dark.</summary>
         public static bool Showing(Bitmap shot)
         {
             if (shot == null) return false;
@@ -70,7 +72,7 @@ namespace AutoClicker
                 if (x >= shot.Width || y >= shot.Height) return false;
                 Color c = shot.GetPixel(x, y);
                 int mx = Math.Max(c.R, Math.Max(c.G, c.B)), mn = Math.Min(c.R, Math.Min(c.G, c.B));
-                if (mx < 58 || mx > 100 || mx - mn > 14) return false;
+                if (mx < 55 || mx > 145 || mx - mn > 26) return false;
             }
             Rectangle play = S(Play, k);
             if (play.Right >= shot.Width || play.Bottom >= shot.Height) return false;
@@ -78,7 +80,7 @@ namespace AutoClicker
         }
 
         /// <summary>The shape to tap, in game-window coordinates, or null if none could be told apart.</summary>
-       public static Point? Solve(Bitmap shot) { string trace; Rectangle box; return Solve(shot, out trace, out box); }
+        public static Point? Solve(Bitmap shot) { string trace; Rectangle box; return Solve(shot, out trace, out box); }
 
         /// <summary>
         /// The shape to tap, in game-window coordinates, or null if none could be told apart. <paramref name="trace"/> says how
@@ -94,88 +96,44 @@ namespace AutoClicker
             if (play.Width < 200 || play.Height < 120) { trace = "the play area is too small"; return null; }
 
             int w = play.Width, h = play.Height;
-            var px = new byte[w * h * 4];
-            BitmapData data = shot.LockBits(play, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-            try
+            var px = new byte[w * h * 3];
+            using (var crop = shot.Clone(play, PixelFormat.Format24bppRgb))
             {
-                var row = new byte[w * 4];
-                for (int y = 0; y < h; y++)
+                BitmapData data = crop.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+                try
                 {
-                    Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), row, 0, row.Length);
-                    Buffer.BlockCopy(row, 0, px, y * w * 4, row.Length);
+                    var row = new byte[w * 3];
+                    for (int y = 0; y < h; y++)
+                    {
+                        Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), row, 0, row.Length);
+                        Buffer.BlockCopy(row, 0, px, y * w * 3, row.Length);
+                    }
                 }
+                finally { crop.UnlockBits(data); }
             }
-            finally { shot.UnlockBits(data); }
-            byte[] solid = Solid(px, w, h);
 
-            box = FindBox(px, w, h, (int)Math.Round(BoxW * k), (int)Math.Round(BoxH * k));
-            if (box.IsEmpty) { trace = "no box found"; return null; }
-
-            // Clear the box's own white border: it would otherwise be the reference itself, or bridge to it.
-            for (int y = Math.Max(0, box.Y - 4); y < Math.Min(h, box.Bottom + 4); y++)
-                for (int x = Math.Max(0, box.X - 4); x < Math.Min(w, box.Right + 4); x++)
-                    if (x < box.X + 14 || x > box.Right - 14 || y < box.Y + 14 || y > box.Bottom - 14)
-                        solid[y * w + x] = 0;
-            // The criss-cross lines also run through the box and out to its edges, dragging the outline with them. They are two
-            // pixels wide, so one erosion of the box interior takes them and leaves the shape's own rim.
-            var thick = new byte[w * h];
-            for (int y = Math.Max(1, box.Y - 4); y < Math.Min(h - 1, box.Bottom + 4); y++)
-                for (int x = Math.Max(1, box.X - 4); x < Math.Min(w - 1, box.Right + 4); x++)
-                    thick[y * w + x] = solid[y * w + x];
-            for (int y = Math.Max(1, box.Y - 4); y < Math.Min(h - 1, box.Bottom + 4); y++)
-                for (int x = Math.Max(1, box.X - 4); x < Math.Min(w - 1, box.Right + 4); x++)
-                    if (solid[y * w + x] != 0 &&
-                        (thick[y * w + x - 1] == 0 || thick[y * w + x + 1] == 0 ||
-                         thick[(y - 1) * w + x] == 0 || thick[(y + 1) * w + x] == 0))
-                        solid[y * w + x] = 0;
-            int bandPix = 0, innerPix = 0;
-            for (int y = Math.Max(0, box.Y); y < Math.Min(h, box.Bottom); y++)
-                for (int x = Math.Max(0, box.X); x < Math.Min(w, box.Right); x++)
-                {
-                    if (solid[y * w + x] == 0) continue;
-                    if (x < box.X + 12 || x > box.Right - 12 || y < box.Y + 12 || y > box.Bottom - 12) bandPix++;
-                    else innerPix++;
-                }
-
-            string why;
-            Shape reference = DescribeLargest(solid, w, h, box, out why);
-            if (reference == null)
+            List<ShapeFinder.DetectedShape> shapes;
+            using (var mat = new Mat(h, w, MatType.CV_8UC3))
             {
-                trace = "box " + box.X + "," + box.Y + " band" + bandPix + " inner" + innerPix + " but no shape inside it (" + why + ")";
-                return null;
+                Marshal.Copy(px, 0, mat.Data, px.Length);
+                shapes = ShapeFinder.ShapeDetector.Detect(mat);
             }
 
-            Shape best = null;
-            Point bestAt = Point.Empty;
-            double bestDistance = double.MaxValue;
-            int candidates = 0;
-            var shown = new List<KeyValuePair<double, string>>();
-            foreach (Blob b in Blobs(solid, w, h, box, (int)Math.Round(MinSide * k), (int)Math.Round(MaxSide * k), false))
-            {
-                Shape s = Describe(solid, w, b);
-                if (s == null) continue;
-                candidates++;
-                double distance = SignatureDistance(reference.Signature, s.Signature)
-                                + Math.Abs(reference.Fill - s.Fill) * 0.08
-                                + Math.Abs(reference.Point - s.Point) * 0.6;
-                shown.Add(new KeyValuePair<double, string>(distance,
-                    "(" + (play.X + b.CentreX) + "," + (play.Y + b.CentreY) + " f" + s.Fill.ToString("0.00") + " p" + s.Point.ToString("0.00") + " d" + distance.ToString("0.000") + ")"));
-                if (distance >= bestDistance) continue;
-                bestDistance = distance;
-                best = s;
-                bestAt = new Point(play.X + b.CentreX, play.Y + b.CentreY);
-            }
-            trace = "box " + box.X + "," + box.Y + ", ref f" + reference.Fill.ToString("0.00") + " p" + reference.Point.ToString("0.00") +
-                    " " + reference.W + "x" + reference.H + ", " + candidates + " candidates, best " +
-                    (best == null ? "none" : bestDistance.ToString("0.000") + " at " + bestAt.X + "," + bestAt.Y);
-            shown.Sort((p, q) => p.Key.CompareTo(q.Key));
-            for (int i = 0; i < shown.Count && i < 12; i++) trace += " " + shown[i].Value;
-            if (best == null || bestDistance > MaxDistance)
-            {
-                trace += " (over " + MaxDistance.ToString("0.00") + ")";
-                return null;
-            }
-            return bestAt;
+            var match = ShapeFinder.ReferenceMatcher.Find(shapes, w, h);
+            foreach (var s in shapes)
+                trace += s.Id + " " + s.Label + (s.Front ? " front" : " bg(" + s.Reason + ")") + " a" + s.Area + "; ";
+            if (match == null) { trace += " no panel or no reference"; return null; }
+            if (match.Panel != null) box = new Rectangle(play.X + match.Panel.Box.X, play.Y + match.Panel.Box.Y, match.Panel.Box.Width, match.Panel.Box.Height);
+
+            var best = match.Best;
+            trace += " best " + best.Shape.Id + " " + best.Shape.Label + " score " + best.Score.ToString("0.00") + " same " + best.SameShape;
+            if (!best.SameShape) return null;
+
+            double sx = 0, sy = 0;
+            foreach (var p in best.Shape.Contour) { sx += p.X; sy += p.Y; }
+            int cx = (int)Math.Round(sx / Math.Max(1, best.Shape.Contour.Length));
+            int cy = (int)Math.Round(sy / Math.Max(1, best.Shape.Contour.Length));
+            return new Point(play.X + cx, play.Y + cy);
         }
 
         // ------------------------------------------------------------------ the box
@@ -313,10 +271,10 @@ namespace AutoClicker
             return found;
         }
 
-        /// <summary>
-        /// The ink mask, from local contrast rather than colour: every pixel that stands out against a blurred copy of the panel.
-        /// Soft translucent masses and the panel itself have no edges and drop out, while shapes, their hatching and their
-        /// outlines do have them. Gaps are closed and small enclosed pockets filled, so hatching reads as one solid body.
+       /// <summary>
+        /// The shape mask. Every flat area holding at least one vivid pixel is kept whole, so a shape arrives as a solid body
+        /// bounded by its own outline. The pale masses hold no vivid pixel and drop out, and the criss-cross lines are edges,
+        /// so they only split areas rather than adding to them.
         /// </summary>
         static byte[] Solid(byte[] px, int w, int h)
         {
@@ -340,7 +298,8 @@ namespace AutoClicker
                 }
             }
 
-            var mask = new byte[w * h];
+            var flat = new bool[w * h];   // smooth enough to belong to an area
+            var seed = new bool[w * h];   // vivid enough to make that area a shape
             for (int y = 0; y < h; y++)
             {
                 int y0 = Math.Max(0, y - BlurRadius), y1 = Math.Min(h - 1, y + BlurRadius);
@@ -350,45 +309,54 @@ namespace AutoClicker
                     int area = (x1 - x0 + 1) * (y1 - y0 + 1);
                     int sum = sat[(y1 + 1) * stride + x1 + 1] - sat[y0 * stride + x1 + 1]
                             - sat[(y1 + 1) * stride + x0] + sat[y0 * stride + x0];
-                    int o = (y * w + x) * 4;
-                    if (Math.Abs(lum[y * w + x] - sum / area) >= EdgeMin) mask[y * w + x] = 1;
+                    int at = y * w + x;
+                    flat[at] = Math.Abs(lum[at] - sum / area) < EdgeMin;
+                    int o = at * 4;
+                    int mx = Math.Max(px[o + 2], Math.Max(px[o + 1], px[o]));
+                    int mn = Math.Min(px[o + 2], Math.Min(px[o + 1], px[o]));
+                    seed[at] = mx >= 110 && (mx - mn >= 45 || mx >= 240);
                 }
             }
 
-            // Erase anything thinner than a rim, before it is thickened: the panel's one- or two-pixel criss-cross lines.
-            var eroded = new byte[w * h];
-            for (int y = 1; y < h - 1; y++)
-                for (int x = 1; x < w - 1; x++)
+            // An area holding a seed is a shape; one without is the panel or a pale mass.
+            var body = new byte[w * h];
+            var seen = new bool[w * h];
+            var stack = new Stack<int>();
+            var cells = new List<int>();
+            for (int start = 0; start < body.Length; start++)
+            {
+                if (seen[start] || !flat[start]) continue;
+                cells.Clear();
+                bool vivid = false;
+                seen[start] = true;
+                stack.Push(start);
+                while (stack.Count > 0)
                 {
-                    int at = y * w + x;
-                    if (mask[at] == 0) continue;
-                    if (mask[at - 1] != 0 && mask[at + 1] != 0 && mask[at - w] != 0 && mask[at + w] != 0)
-                        eroded[at] = 1;
-                }
-
-            // Drop anything too thin to be a rim: the panel's one-pixel criss-cross lines and their dots.
-            var kept = new byte[w * h];
-            for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
-                {
-                    if (eroded[y * w + x] == 0) continue;
-                    int n = 0;
+                    int i = stack.Pop();
+                    cells.Add(i);
+                    if (seed[i]) vivid = true;
+                    int ix = i % w, iy = i / w;
                     for (int dy = -1; dy <= 1; dy++)
                         for (int dx = -1; dx <= 1; dx++)
                         {
-                            int nx = x + dx, ny = y + dy;
+                            int nx = ix + dx, ny = iy + dy;
                             if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-                            n += eroded[ny * w + nx];
+                            int ni = ny * w + nx;
+                            if (seen[ni] || !flat[ni]) continue;
+                            seen[ni] = true;
+                            stack.Push(ni);
                         }
-                    if (n >= 4) kept[y * w + x] = 1;
                 }
+                if (!vivid || cells.Count < 40) continue;
+                foreach (int i in cells) body[i] = 1;
+            }
 
-            // Close the gaps in hatching and outlines.
+            // Thicken a little, so a striped shape's separate bands become one, then close the pockets inside it.
             var solid = new byte[w * h];
             for (int y = 0; y < h; y++)
                 for (int x = 0; x < w; x++)
                 {
-                    if (kept[y * w + x] == 0) continue;
+                    if (body[y * w + x] == 0) continue;
                     int y0 = Math.Max(0, y - Grow), y1 = Math.Min(h - 1, y + Grow);
                     int x0 = Math.Max(0, x - Grow), x1 = Math.Min(w - 1, x + Grow);
                     for (int ny = y0; ny <= y1; ny++)
@@ -503,20 +471,20 @@ namespace AutoClicker
             }
             why = seen + " found: " + why;
             if (best == null) return null;
-            Shape s = Describe(px, w, best);
+            Shape s = Describe(px, w, h, best);
             if (s == null) why += "(describe failed)";
             return s;
         }
 
-       /// <summary>
+        /// <summary>
         /// The blob's outer outline: radii every 11.25° from its centre, each taken at the furthest ink along that ray inside the
-        /// blob's own box, so stripes, fills and hollow middles don't matter. Normalised by their mean.
+        /// blob's own box, so stripes, fills and hollow middles don't matter. Rays far past the median are clamped, since a line
+        /// crossing the shape makes a few of them far too long. Normalised by their mean.
         /// </summary>
-        static Shape Describe(byte[] px, int w, Blob b)
+        static Shape Describe(byte[] px, int w, int h, Blob b)
         {
             int cx = b.CentreX, cy = b.CentreY;
             var radii = new double[Rays];
-            double sum = 0;
             for (int r = 0; r < Rays; r++)
             {
                 double angle = r * 2 * Math.PI / Rays;
@@ -533,13 +501,24 @@ namespace AutoClicker
                 for (double t = 1; t <= maxT; t += 0.5)
                 {
                     int x = (int)Math.Round(cx + dx * t), y = (int)Math.Round(cy + dy * t);
-                    if (x < 0 || y < 0 || x >= w) break;
+                    if (x < 0 || y < 0 || x >= w || y >= h) break;
                     if (Inside(px, y * w + x)) last = t;   // the furthest ink, not the first gap
                 }
                 if (last <= 0) return null;
                 radii[r] = last;
-                sum += last;
             }
+
+            var sorted = (double[])radii.Clone();
+            Array.Sort(sorted);
+            double median = sorted[Rays / 2];
+            double cap = median * 1.2;
+            double sum = 0;
+            for (int r = 0; r < Rays; r++)
+            {
+                if (radii[r] > cap) radii[r] = cap;
+                sum += radii[r];
+            }
+
             double mean = sum / Rays;
             if (mean <= 0) return null;
             double spread = 0;
@@ -549,13 +528,23 @@ namespace AutoClicker
                 spread += d * d;
             }
             for (int r = 0; r < Rays; r++) radii[r] /= mean;
+
+            // Fill over the shape's own extent, not the blob's box: a line crossing it would widen the box and lower the fill.
+            int side = Math.Max(4, (int)Math.Round(median * 2));
+            int x0 = Math.Max(0, cx - side / 2), x1 = Math.Min(w - 1, cx + side / 2);
+            int y0 = Math.Max(0, cy - side / 2), y1 = Math.Min(h - 1, cy + side / 2);
+            int inked = 0;
+            for (int y = y0; y <= y1; y++)
+                for (int x = x0; x <= x1; x++)
+                    if (Inside(px, y * w + x)) inked++;
+
             return new Shape
             {
                 Signature = radii,
                 Point = Math.Sqrt(spread / Rays) / mean,
-                Fill = b.Area / (double)((b.X1 - b.X0 + 1) * (b.Y1 - b.Y0 + 1)),
-                W = b.X1 - b.X0 + 1,
-                H = b.Y1 - b.Y0 + 1
+                Fill = inked / (double)Math.Max(1, (x1 - x0 + 1) * (y1 - y0 + 1)),
+                W = side,
+                H = side
             };
         }
 

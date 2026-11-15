@@ -1,3 +1,9 @@
 # Built files: build them from the source instead.
 AutoClicker.exe
 ClickRecorder.exe
+
+probe.exe
+shot.png
+shot-marked.png
+OpenCvSharp.dll
+OpenCvSharpExtern.dll
